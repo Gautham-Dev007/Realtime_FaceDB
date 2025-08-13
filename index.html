@@ -113,8 +113,17 @@
 
 <script>
 /* ===== USERS & LOGIN ===== */
-const defaultUsers = [{ username: "admin", password: "Admin@123", role: "admin", lastAccess: null }];
+const defaultUsers = [{ username: "admin", password: "Admin@123", role: "admin", accessHistory: [] }];
 let users = JSON.parse(localStorage.getItem("users")) || defaultUsers;
+users = users.map(u => {
+  if (u.lastAccess && !u.accessHistory) {
+    u.accessHistory = [{ timestamp: u.lastAccess, ip: "Unknown" }];
+    delete u.lastAccess;
+  } else if (!u.accessHistory) {
+    u.accessHistory = [];
+  }
+  return u;
+});
 localStorage.setItem("users", JSON.stringify(users));
 
 const loginScreen = document.getElementById("loginScreen");
@@ -126,12 +135,25 @@ function showDashboard(user) {
   dashboardScreen.style.display = "block";
   window.loggedInUser = user;
 
-  // Update last access timestamp
+  // Update access history with timestamp and IP
   const usersData = JSON.parse(localStorage.getItem("users")) || [];
   const idx = usersData.findIndex(u => u.username === user.username);
   if (idx !== -1) { 
-    usersData[idx].lastAccess = new Date().toLocaleString(); 
-    localStorage.setItem("users", JSON.stringify(usersData)); 
+    const timestamp = new Date().toLocaleString();
+    fetch('https://api.ipify.org?format=json')
+      .then(r => r.json())
+      .then(d => {
+        const ip = d.ip;
+        if (!usersData[idx].accessHistory) usersData[idx].accessHistory = [];
+        usersData[idx].accessHistory.push({ timestamp, ip });
+        localStorage.setItem("users", JSON.stringify(usersData)); 
+      })
+      .catch(() => {
+        // Fallback if IP fetch fails
+        if (!usersData[idx].accessHistory) usersData[idx].accessHistory = [];
+        usersData[idx].accessHistory.push({ timestamp, ip: "Unknown" });
+        localStorage.setItem("users", JSON.stringify(usersData)); 
+      });
   }
 
   if (user.role === "admin") document.getElementById("userMgmtPanel").style.display = "block";
@@ -164,9 +186,42 @@ function renderUserList() {
   const userList = document.getElementById("userList");
   const usersData = JSON.parse(localStorage.getItem("users")) || [];
   userList.innerHTML = "";
-  usersData.forEach(u => {
+  usersData.forEach((u, index) => {
     const li = document.createElement("li");
-    li.textContent = `${u.username} (${u.role}) - Last access: ${u.lastAccess || "Never"}`;
+    li.className = "flex items-center mb-2";
+    const span = document.createElement("span");
+    span.textContent = `${u.username} (${u.role})`;
+    li.appendChild(span);
+
+    // Info icon for access history
+    const infoBtn = document.createElement("button");
+    infoBtn.textContent = "ℹ️";
+    infoBtn.className = "ml-2 text-blue-500 hover:text-blue-700";
+    infoBtn.onclick = () => {
+      if (!u.accessHistory || !u.accessHistory.length) {
+        alert("No access history for this user.");
+        return;
+      }
+      const historyStr = u.accessHistory.map(h => `Time: ${h.timestamp}, IP: ${h.ip}`).join('\n');
+      alert(`Access History for ${u.username}:\n\n${historyStr}`);
+    };
+    li.appendChild(infoBtn);
+
+    // Delete button (admin only, can't delete self)
+    if (window.loggedInUser.role === "admin" && u.username !== window.loggedInUser.username) {
+      const delBtn = document.createElement("button");
+      delBtn.textContent = "🗑️";
+      delBtn.className = "ml-2 text-red-500 hover:text-red-700";
+      delBtn.onclick = () => {
+        if (confirm(`Delete user ${u.username}? This cannot be undone.`)) {
+          usersData.splice(index, 1);
+          localStorage.setItem("users", JSON.stringify(usersData));
+          renderUserList();
+        }
+      };
+      li.appendChild(delBtn);
+    }
+
     userList.appendChild(li);
   });
 }
@@ -177,7 +232,7 @@ document.getElementById("addUserBtn").addEventListener("click", () => {
   if (!username || !password) return alert("Enter username and password");
   let usersData = JSON.parse(localStorage.getItem("users")) || [];
   if (usersData.find(u => u.username === username)) return alert("Username exists");
-  usersData.push({ username, password, role: "user", lastAccess: null });
+  usersData.push({ username, password, role: "user", accessHistory: [] });
   localStorage.setItem("users", JSON.stringify(usersData));
   document.getElementById("newUser").value = "";
   document.getElementById("newPass").value = "";
@@ -266,7 +321,7 @@ async function toggleRemote() {
   } catch {
     banner("error", "Remote control failed (network/rules).");
   } finally {
-    btn.disabled = false;
+   asibility btn.disabled = false;
     btn.textContent = cachedStatus.is_recognition_active ? "Stop Recognition" : "Start Recognition";
   }
 }
