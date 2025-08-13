@@ -50,7 +50,6 @@
     <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
       <!-- Remote control -->
       <div class="bg-white rounded-xl shadow p-4 space-y-3">
-isë
         <h2 class="font-semibold text-lg">Remote Control</h2>
         <button id="toggleBtn"
           class="w-full py-2 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
@@ -128,15 +127,17 @@ async function initializeUsers() {
     const res = await fetch(URL_USERS, { cache: "no-store" });
     const data = await res.json();
     if (!data) {
-      // Initialize with default admin if no users exist
+      console.log("No users found, initializing with default admin");
       await fetch(URL_USERS, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ admin: defaultUsers[0] })
       });
     }
-  } catch {
-    console.error("Failed to initialize users");
+  } catch (error) {
+    console.error("Failed to initialize users:", error);
+    banner("error", "Failed to connect to database. Using local storage as fallback.");
+    localStorage.setItem("users", JSON.stringify(defaultUsers));
   }
 }
 
@@ -155,12 +156,15 @@ async function getUserIP() {
 async function fetchUsers() {
   try {
     const res = await fetch(URL_USERS, { cache: "no-store" });
-    if (!res.ok) throw new Error("Failed to fetch users");
+    if (!res.ok) throw new Error(`Failed to fetch users: ${res.status}`);
     const data = await res.json();
+    console.log("Fetched users from Firebase:", data);
     return data ? Object.values(data) : [];
-  } catch {
-    banner("error", "Failed to load users.");
-    return [];
+  } catch (error) {
+    console.error("Fetch users error:", error);
+    banner("warn", "Failed to load users from database. Using local storage.");
+    const localUsers = JSON.parse(localStorage.getItem("users")) || defaultUsers;
+    return localUsers;
   }
 }
 
@@ -174,13 +178,25 @@ async function showDashboard(user) {
   const ip = await getUserIP();
   const userData = { ...user, accessHistory: [...(user.accessHistory || []), { timestamp, ip }] };
   try {
-    await fetch(URL_USER(user.username), {
+    const res = await fetch(URL_USER(user.username), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(userData)
     });
-  } catch {
-    banner("error", "Failed to update access history.");
+    if (!res.ok) throw new Error(`Failed to update user: ${res.status}`);
+    console.log(`Updated access history for ${user.username}`);
+  } catch (error) {
+    console.error("Update user error:", error);
+    banner("error", "Failed to update access history in database.");
+    // Fallback to localStorage
+    let localUsers = JSON.parse(localStorage.getItem("users")) || [];
+    const idx = localUsers.findIndex(u => u.username === user.username);
+    if (idx !== -1) {
+      localUsers[idx] = userData;
+    } else {
+      localUsers.push(userData);
+    }
+    localStorage.setItem("users", JSON.stringify(localUsers));
   }
 
   if (user.role === "admin") document.getElementById("userMgmtPanel").style.display = "block";
@@ -206,7 +222,10 @@ if (savedUser) {
   fetchUsers().then(users => {
     const user = users.find(u => u.username === savedUser.username && u.password === savedUser.password);
     if (user) showDashboard(user);
-    else localStorage.removeItem("loggedInUser");
+    else {
+      console.log("Auto-login failed: User not found or credentials invalid");
+      localStorage.removeItem("loggedInUser");
+    }
   });
 }
 
@@ -249,10 +268,18 @@ async function renderUserList() {
       delBtn.onclick = async () => {
         if (confirm(`Delete user ${u.username}? This cannot be undone.`)) {
           try {
-            await fetch(URL_USER(u.username), { method: "DELETE" });
+            const res = await fetch(URL_USER(u.username), { method: "DELETE" });
+            if (!res.ok) throw new Error(`Failed to delete user: ${res.status}`);
             renderUserList();
-          } catch {
-            banner("error", "Failed to delete user.");
+            banner("success", `User ${u.username} deleted.`);
+          } catch (error) {
+            console.error("Delete user error:", error);
+            banner("error", "Failed to delete user from database.");
+            // Fallback to localStorage
+            let localUsers = JSON.parse(localStorage.getItem("users")) || [];
+            localUsers = localUsers.filter(user => user.username !== u.username);
+            localStorage.setItem("users", JSON.stringify(localUsers));
+            renderUserList();
           }
         }
       };
@@ -271,17 +298,26 @@ document.getElementById("addUserBtn").addEventListener("click", async () => {
   if (usersData.find(u => u.username === username)) return alert("Username exists");
   const newUser = { username, password, role: "user", accessHistory: [] };
   try {
-    await fetch(URL_USER(username), {
+    const res = await fetch(URL_USER(username), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newUser)
     });
+    if (!res.ok) throw new Error(`Failed to add user: ${res.status}`);
     document.getElementById("newUser").value = "";
     document.getElementById("newPass").value = "";
     renderUserList();
-    alert("User added successfully");
-  } catch {
-    banner("error", "Failed to add user.");
+    banner("success", "User added successfully");
+  } catch (error) {
+    console.error("Add user error:", error);
+    banner("error", "Failed to add user to database.");
+    // Fallback to localStorage
+    let localUsers = JSON.parse(localStorage.getItem("users")) || [];
+    localUsers.push(newUser);
+    localStorage.setItem("users", JSON.stringify(localUsers));
+    document.getElementById("newUser").value = "";
+    document.getElementById("newPass").value = "";
+    renderUserList();
   }
 });
 
@@ -332,9 +368,11 @@ function setStatusUI() {
 async function fetchStatus() {
   try {
     const res = await fetch(URL_STATUS, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Failed to fetch status: ${res.status}`);
     const data = await res.json();
     cachedStatus = data || { is_recognition_active: false, last_active: null, error: "Device offline" };
-  } catch {
+  } catch (error) {
+    console.error("Fetch status error:", error);
     cachedStatus = { is_recognition_active: false, last_active: cachedStatus.last_active || null, error: "Network error" };
   }
   setStatusUI();
@@ -351,7 +389,7 @@ async function toggleRemote() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(desired)
     });
-    if (!r.ok) throw new Error("control write failed");
+    if (!r.ok) throw new Error(`Control write failed: ${r.status}`);
     const start = Date.now();
     let ok = false;
     while (Date.now() - start < 8000) {
@@ -361,7 +399,8 @@ async function toggleRemote() {
     }
     if (!ok) banner("warn", desired ? "Could not confirm start. App may be offline/camera busy." : "Could not confirm stop.");
     else banner("success", desired ? "Capture started." : "Capture stopped.");
-  } catch {
+  } catch (error) {
+    console.error("Toggle remote error:", error);
     banner("error", "Remote control failed (network/rules).");
   } finally {
     btn.disabled = false;
@@ -406,11 +445,13 @@ async function loadFaces() {
   document.getElementById("refreshBtn").disabled = true;
   try {
     const res = await fetch(URL_FACES, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Failed to fetch faces: ${res.status}`);
     const data = await res.json();
     if (!data) { faces = []; renderGallery(); return; }
     faces = Object.entries(data).map(([key, v]) => ({ key, ...v, selected: false })).sort((a,b)=> (new Date(b.timestamp || 0)) - (new Date(a.timestamp || 0)));
     renderGallery();
-  } catch {
+  } catch (error) {
+    console.error("Load faces error:", error);
     banner("error", "Failed to load images.");
   } finally {
     document.getElementById("refreshBtn").disabled = false;
@@ -435,7 +476,12 @@ async function deleteSelected() {
   if (!selected.length) { banner("warn", "No images selected."); return; }
   if (!confirm(`Delete ${selected.length} image(s)? This cannot be undone.`)) return;
   for (const f of selected) {
-    try { await fetch(URL_FACE(f.key), { method: "DELETE" }); } catch {}
+    try {
+      const res = await fetch(URL_FACE(f.key), { method: "DELETE" });
+      if (!res.ok) throw new Error(`Failed to delete face: ${res.status}`);
+    } catch (error) {
+      console.error("Delete face error:", error);
+    }
   }
   await loadFaces();
   banner("success", "Selected images deleted.");
