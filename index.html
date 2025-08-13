@@ -130,7 +130,19 @@ const loginScreen = document.getElementById("loginScreen");
 const dashboardScreen = document.getElementById("dashboardScreen");
 const errorMsg = document.getElementById("errorMsg");
 
-function showDashboard(user) {
+async function getUserIP() {
+  try {
+    const response = await fetch('https://api.ipapi.co/json/');
+    if (!response.ok) throw new Error('IP fetch failed');
+    const data = await response.json();
+    return data.ip || "Unknown";
+  } catch (error) {
+    console.error('IP fetch error:', error);
+    return "Unknown";
+  }
+}
+
+async function showDashboard(user) {
   loginScreen.style.display = "none";
   dashboardScreen.style.display = "block";
   window.loggedInUser = user;
@@ -140,33 +152,23 @@ function showDashboard(user) {
   const idx = usersData.findIndex(u => u.username === user.username);
   if (idx !== -1) { 
     const timestamp = new Date().toLocaleString();
-    fetch('https://api.ipify.org?format=json')
-      .then(r => r.json())
-      .then(d => {
-        const ip = d.ip;
-        if (!usersData[idx].accessHistory) usersData[idx].accessHistory = [];
-        usersData[idx].accessHistory.push({ timestamp, ip });
-        localStorage.setItem("users", JSON.stringify(usersData)); 
-      })
-      .catch(() => {
-        // Fallback if IP fetch fails
-        if (!usersData[idx].accessHistory) usersData[idx].accessHistory = [];
-        usersData[idx].accessHistory.push({ timestamp, ip: "Unknown" });
-        localStorage.setItem("users", JSON.stringify(usersData)); 
-      });
+    const ip = await getUserIP();
+    if (!usersData[idx].accessHistory) usersData[idx].accessHistory = [];
+    usersData[idx].accessHistory.push({ timestamp, ip });
+    localStorage.setItem("users", JSON.stringify(usersData)); 
   }
 
   if (user.role === "admin") document.getElementById("userMgmtPanel").style.display = "block";
   renderUserList();
 }
 
-document.getElementById("loginBtn").addEventListener("click", () => {
+document.getElementById("loginBtn").addEventListener("click", async () => {
   const username = document.getElementById("username").value.trim();
   const password = document.getElementById("password").value;
   const user = users.find(u => u.username === username && u.password === password);
   if (user) {
     localStorage.setItem("loggedInUser", JSON.stringify(user));
-    showDashboard(user);
+    await showDashboard(user);
   } else {
     errorMsg.textContent = "Invalid username or password";
   }
@@ -414,5 +416,3 @@ loadFaces();
 </script>
 </body>
 </html>
-```
-
