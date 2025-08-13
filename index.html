@@ -88,7 +88,6 @@
           <button id="downloadSelBtn" class="py-2 px-3 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm">Download Selected (ZIP)</button>
           <button id="deleteSelBtn" class="py-2 px-3 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm">Delete Selected</button>
           <button id="identifySelBtn" class="py-2 px-3 rounded-lg bg-purple-600 text-white hover:bg-purple-700 text-sm">Identify Selected</button>
-          <button id="assignNameBtn" class="py-2 px-3 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm hidden" data-admin-only>Assign Name</button>
         </div>
         <p class="text-xs text-gray-500">Tip: You can also click images to toggle selection.</p>
       </div>
@@ -145,6 +144,7 @@ async function initializeUsers() {
     if (!data || !Object.values(data).some(u => u.username === "admin")) {
       console.log("No admin user found in Firebase");
       banner("error", "Admin account not found. Please create an admin user in the Firebase Console.");
+      // Admin must be manually created in Firebase Console for security
     }
   } catch (error) {
     console.error("Initialize users error:", error);
@@ -212,6 +212,7 @@ async function showDashboard(user) {
   } catch (error) {
     console.error("Update user error:", error);
     banner("error", "Failed to update access history in database.");
+    // Fallback to localStorage
     let localUsers = JSON.parse(localStorage.getItem("users")) || [];
     const idx = localUsers.findIndex(u => u.username === user.username);
     if (idx !== -1) {
@@ -226,8 +227,7 @@ async function showDashboard(user) {
   if (user.role === "admin") {
     document.getElementById("userMgmtPanel").style.display = "block";
     document.getElementById("knownFacesPanel").style.display = "block";
-    document.getElementById("assignNameBtn").classList.remove("hidden");
-    await loadKnownFaces();
+    loadKnownFaces();
     renderKnownList();
   }
   renderUserList();
@@ -280,6 +280,7 @@ async function renderUserList() {
     span.textContent = `${u.username} (${u.role})`;
     li.appendChild(span);
 
+    // Info icon for access history
     const infoBtn = document.createElement("button");
     infoBtn.textContent = "ℹ️";
     infoBtn.className = "ml-2 text-blue-500 hover:text-blue-700";
@@ -291,11 +292,12 @@ async function renderUserList() {
       const historyStr = u.accessHistory.map(h => 
         `Time: ${h.timestamp || 'Unknown'}, IP: ${h.ip || 'Unknown'}, Location: ${h.location || 'Unknown'}`
       ).join('\n');
-      console.log(`Access history for ${u.username}:`, JSON.stringify(u.accessHistory, null, 2));
+      console.log(`Access history for ${u.username}:`, u.accessHistory);
       alert(`Access History for ${u.username}:\n\n${historyStr}`);
     };
     li.appendChild(infoBtn);
 
+    // Delete button (admin only, can't delete self)
     if (window.loggedInUser.role === "admin" && u.username !== window.loggedInUser.username) {
       const delBtn = document.createElement("button");
       delBtn.textContent = "🗑️";
@@ -310,6 +312,7 @@ async function renderUserList() {
           } catch (error) {
             console.error("Delete user error:", error);
             banner("error", "Failed to delete user from database.");
+            // Fallback to localStorage
             let localUsers = JSON.parse(localStorage.getItem("users")) || [];
             localUsers = localUsers.filter(user => user.username !== u.username);
             localStorage.setItem("users", JSON.stringify(localUsers));
@@ -345,6 +348,7 @@ document.getElementById("addUserBtn").addEventListener("click", async () => {
   } catch (error) {
     console.error("Add user error:", error);
     banner("error", "Failed to add user to database.");
+    // Fallback to localStorage
     let localUsers = JSON.parse(localStorage.getItem("users")) || [];
     localUsers.push(newUser);
     localStorage.setItem("users", JSON.stringify(localUsers));
@@ -360,16 +364,11 @@ let knownFaces = [];
 async function loadKnownFaces() {
   try {
     const res = await fetch(URL_KNOWN_FACES, { cache: "no-store" });
-    if (!res.ok) throw new Error(`Failed to fetch known faces: ${res.status}`);
     const data = await res.json();
-    knownFaces = data ? Object.entries(data).map(([name, v]) => ({ 
-      name, 
-      descriptor: new Float32Array(v.descriptor) 
-    })) : [];
-    console.log("Loaded known faces:", JSON.stringify(knownFaces.map(f => ({ name: f.name, descriptorLength: f.descriptor.length }), null, 2)));
+    knownFaces = data ? Object.entries(data).map(([name, v]) => ({ name, descriptor: new Float32Array(v.descriptor) })) : [];
+    console.log("Loaded known faces:", knownFaces);
   } catch (error) {
     console.error("Load known faces error:", error);
-    banner("error", "Failed to load known faces from database.");
     knownFaces = [];
   }
 }
@@ -387,25 +386,23 @@ function renderKnownList() {
 document.getElementById("addKnownBtn").addEventListener("click", async () => {
   const name = document.getElementById("newKnownName").value.trim();
   const file = document.getElementById("newKnownImage").files[0];
-  if (!name || !file) return banner("warn", "Enter name and select image");
+  if (!name || !file) return alert("Enter name and select image");
   const img = await faceapi.bufferToImage(file);
   const detection = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
-  console.log("Add known face detection:", detection ? "Face detected" : "No face detected");
-  if (!detection) return banner("error", "No face detected in the image");
+  if (!detection) return alert("No face detected in the image");
   const descriptor = detection.descriptor;
   try {
-    const res = await fetch(BASE + `known_faces/${name}.json`, {
+    await fetch(BASE + `known_faces/${name}.json`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ descriptor: Array.from(descriptor) })
     });
-    if (!res.ok) throw new Error(`Failed to add known face: ${res.status}`);
-    await loadKnownFaces();
+    loadKnownFaces();
     renderKnownList();
-    banner("success", "Known face added");
+    alert("Known face added");
   } catch (error) {
     console.error("Add known face error:", error);
-    banner("error", "Failed to add known face");
+    alert("Failed to add known face");
   }
 });
 
@@ -456,11 +453,9 @@ function setStatusUI() {
 async function fetchStatus() {
   try {
     const res = await fetch(URL_STATUS, { cache: "no-store" });
-    if (!res.ok) throw new Error(`Failed to fetch status: ${res.status}`);
     const data = await res.json();
     cachedStatus = data || { is_recognition_active: false, last_active: null, error: "Device offline" };
-  } catch (error) {
-    console.error("Fetch status error:", error);
+  } catch {
     cachedStatus = { is_recognition_active: false, last_active: cachedStatus.last_active || null, error: "Network error" };
   }
   setStatusUI();
@@ -477,7 +472,7 @@ async function toggleRemote() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(desired)
     });
-    if (!r.ok) throw new Error(`Control write failed: ${r.status}`);
+    if (!r.ok) throw new Error("control write failed");
     const start = Date.now();
     let ok = false;
     while (Date.now() - start < 8000) {
@@ -487,8 +482,7 @@ async function toggleRemote() {
     }
     if (!ok) banner("warn", desired ? "Could not confirm start. App may be offline/camera busy." : "Could not confirm stop.");
     else banner("success", desired ? "Capture started." : "Capture stopped.");
-  } catch (error) {
-    console.error("Toggle remote error:", error);
+  } catch {
     banner("error", "Remote control failed (network/rules).");
   } finally {
     btn.disabled = false;
@@ -496,7 +490,7 @@ async function toggleRemote() {
   }
 }
 
-/* ===== Faces: load, render, select, download, delete, assign ===== */
+/* ===== Faces: load, render, select, download, delete ===== */
 function renderLatest(entry) {
   const cap = document.getElementById("latestCaption");
   const box = document.getElementById("latestImg");
@@ -521,73 +515,40 @@ function renderGallery() {
     const meta = document.createElement("div");
     meta.className = "px-2 py-2 text-xs text-gray-700 flex items-center justify-between";
     meta.innerHTML = `<span class="truncate">${f.timestamp || ""} ${f.label ? `- ${f.label}` : ""}</span><input type="checkbox" class="h-4 w-4" ${f.selected ? "checked" : ""}>`;
-    imgWrap.onclick = () => { 
-      f.selected = !f.selected; 
-      checkbox.checked = f.selected; 
-      card.classList.toggle("ring-2", f.selected); 
-      card.classList.toggle("ring-blue-500", f.selected); 
-    };
+    imgWrap.onclick = () => { f.selected = !f.selected; checkbox.checked = f.selected; card.classList.toggle("ring-2", f.selected); card.classList.toggle("ring-blue-500", f.selected); };
     const checkbox = meta.querySelector("input[type=checkbox]");
-    checkbox.addEventListener("change", () => { 
-      f.selected = checkbox.checked; 
-      card.classList.toggle("ring-2", f.selected); 
-      card.classList.toggle("ring-blue-500", f.selected); 
-    });
-    card.appendChild(imgWrap); 
-    card.appendChild(meta); 
-    g.appendChild(card);
+    checkbox.addEventListener("change", () => { f.selected = checkbox.checked; card.classList.toggle("ring-2", f.selected); card.classList.toggle("ring-blue-500", f.selected); });
+    card.appendChild(imgWrap); card.appendChild(meta); g.appendChild(card);
     if (f.selected) { card.classList.add("ring-2", "ring-blue-500"); }
   }
-  console.log("Rendered gallery with faces:", JSON.stringify(faces.map(f => ({ key: f.key, label: f.label })), null, 2));
 }
 
 async function loadFaces() {
   document.getElementById("refreshBtn").disabled = true;
   try {
     const res = await fetch(URL_FACES, { cache: "no-store" });
-    if (!res.ok) throw new Error(`Failed to fetch faces: ${res.status}`);
     const data = await res.json();
     if (!data) { faces = []; renderGallery(); return; }
-    faces = Object.entries(data).map(([key, v]) => ({ 
-      key, 
-      ...v, 
-      selected: false, 
-      label: v.label || null 
-    })).sort((a,b) => (new Date(b.timestamp || 0)) - (new Date(a.timestamp || 0)));
-    console.log("Loaded faces:", JSON.stringify(faces.map(f => ({ key: f.key, label: f.label })), null, 2));
+    faces = Object.entries(data).map(([key, v]) => ({ key, ...v, selected: false, label: null })).sort((a,b)=> (new Date(b.timestamp || 0)) - (new Date(a.timestamp || 0)));
     renderGallery();
-  } catch (error) {
-    console.error("Load faces error:", error);
+  } catch {
     banner("error", "Failed to load images.");
   } finally {
     document.getElementById("refreshBtn").disabled = false;
   }
 }
 
-function selectAll(val) { 
-  faces.forEach(f => f.selected = val); 
-  renderGallery(); 
-}
+function selectAll(val) { faces.forEach(f => f.selected = val); renderGallery(); }
 
-function b64ToUint8Array(b64) { 
-  const binary = atob(b64); 
-  const len = binary.length; 
-  const bytes = new Uint8Array(len); 
-  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i); 
-  return bytes; 
-}
+function b64ToUint8Array(b64) { const binary = atob(b64); const len = binary.length; const bytes = new Uint8Array(len); for (let i=0;i<len;i++) bytes[i]=binary.charCodeAt(i); return bytes; }
 
 async function downloadSelectedZip() {
   const selected = faces.filter(f => f.selected);
   if (!selected.length) { banner("warn", "No images selected."); return; }
   const zip = new JSZip();
-  selected.forEach((f, idx) => { 
-    const bytes = b64ToUint8Array(f.image_base64); 
-    const safeTs = (f.timestamp || `img_${idx}`).replace(/[:\s]/g, "_"); 
-    zip.file(`${safeTs}_${f.key}${f.label ? `_${f.label}` : ""}.jpg`, bytes); 
-  });
+  selected.forEach((f, idx)=> { const bytes = b64ToUint8Array(f.image_base64); const safeTs = (f.timestamp || `img_${idx}`).replace(/[:\s]/g,"_"); zip.file(`${safeTs}_${f.key}.jpg`, bytes); });
   const blob = await zip.generateAsync({ type: "blob" });
-  saveAs(blob, `faces_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.zip`);
+  saveAs(blob, `faces_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.zip`);
 }
 
 async function deleteSelected() {
@@ -595,111 +556,10 @@ async function deleteSelected() {
   if (!selected.length) { banner("warn", "No images selected."); return; }
   if (!confirm(`Delete ${selected.length} image(s)? This cannot be undone.`)) return;
   for (const f of selected) {
-    try {
-      const res = await fetch(URL_FACE(f.key), { method: "DELETE" });
-      if (!res.ok) throw new Error(`Failed to delete face: ${res.status}`);
-    } catch (error) {
-      console.error("Delete face error:", error);
-    }
+    try { await fetch(URL_FACE(f.key), { method: "DELETE" }); } catch {}
   }
   await loadFaces();
   banner("success", "Selected images deleted.");
-}
-
-async function identifySelected() {
-  const selected = faces.filter(f => f.selected);
-  if (!selected.length) return banner("warn", "No images selected.");
-  if (!knownFaces.length) return banner("warn", "No known faces added.");
-  console.log("Identifying with known faces:", JSON.stringify(knownFaces.map(f => f.name), null, 2));
-  for (const f of selected) {
-    const img = new Image();
-    img.src = "data:image/jpeg;base64," + f.image_base64;
-    await new Promise(r => img.onload = r);
-    const detection = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
-    console.log(`Detection for ${f.key}:`, detection ? "Face detected" : "No face detected");
-    if (!detection) {
-      f.label = "No face detected";
-      try {
-        await fetch(URL_FACE(f.key), {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...f, selected: undefined })
-        });
-      } catch (error) {
-        console.error(`Update face label error for ${f.key}:`, error);
-      }
-      continue;
-    }
-    const descriptor = detection.descriptor;
-    let bestMatch = null;
-    let minDistance = Infinity;
-    for (const k of knownFaces) {
-      if (!k.descriptor || k.descriptor.length !== 128) {
-        console.warn(`Invalid descriptor for ${k.name}`);
-        continue;
-      }
-      const distance = faceapi.euclideanDistance(descriptor, k.descriptor);
-      console.log(`Distance to ${k.name}: ${distance}`);
-      if (distance < minDistance) {
-        minDistance = distance;
-        bestMatch = k.name;
-      }
-    }
-    f.label = minDistance < 0.7 ? bestMatch : "Unknown";
-    try {
-      await fetch(URL_FACE(f.key), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...f, selected: undefined })
-      });
-    } catch (error) {
-      console.error(`Update face label error for ${f.key}:`, error);
-    }
-  }
-  renderGallery();
-  banner("success", "Selected images identified.");
-}
-
-async function assignNameToSelected() {
-  if (window.loggedInUser.role !== "admin") return;
-  const selected = faces.filter(f => f.selected && (!f.label || f.label === "Unknown" || f.label === "No face detected"));
-  if (!selected.length) return banner("warn", "No unrecognized images selected.");
-  const name = prompt("Enter name for selected image(s):").trim();
-  if (!name) return banner("warn", "No name provided.");
-  if (knownFaces.find(k => k.name === name)) return banner("warn", "Name already exists in known faces.");
-  let descriptorAdded = false;
-  for (const f of selected) {
-    const img = new Image();
-    img.src = "data:image/jpeg;base64," + f.image_base64;
-    await new Promise(r => img.onload = r);
-    const detection = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
-    console.log(`Assign name detection for ${f.key}:`, detection ? "Face detected" : "No face detected");
-    f.label = name;
-    try {
-      await fetch(URL_FACE(f.key), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...f, selected: undefined })
-      });
-      if (detection && !descriptorAdded) {
-        const descriptor = detection.descriptor;
-        await fetch(BASE + `known_faces/${name}.json`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ descriptor: Array.from(descriptor) })
-        });
-        descriptorAdded = true;
-      }
-    } catch (error) {
-      console.error(`Assign name error for ${f.key}:`, error);
-      banner("error", `Failed to assign name to ${f.key}`);
-      continue;
-    }
-  }
-  await loadKnownFaces();
-  renderKnownList();
-  renderGallery();
-  banner("success", `Assigned name "${name}" to selected images.`);
 }
 
 /* ===== EVENT LISTENERS ===== */
@@ -709,20 +569,46 @@ document.getElementById("selectAllBtn").addEventListener("click", () => selectAl
 document.getElementById("deselectAllBtn").addEventListener("click", () => selectAll(false));
 document.getElementById("downloadSelBtn").addEventListener("click", downloadSelectedZip);
 document.getElementById("deleteSelBtn").addEventListener("click", deleteSelected);
-document.getElementById("identifySelBtn").addEventListener("click", identifySelected);
-document.getElementById("assignNameBtn").addEventListener("click", assignNameToSelected);
+document.getElementById("identifySelBtn").addEventListener("click", async () => {
+  const selected = faces.filter(f => f.selected);
+  if (!selected.length) return banner("warn", "No images selected.");
+  if (!knownFaces.length) return banner("warn", "No known faces added.");
+  for (const f of selected) {
+    const img = new Image();
+    img.src = "data:image/jpeg;base64," + f.image_base64;
+    await new Promise(r => img.onload = r);
+    const detection = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+    if (!detection) {
+      f.label = "No face detected";
+      continue;
+    }
+    const descriptor = detection.descriptor;
+    let bestMatch = null;
+    let minDistance = Infinity;
+    for (const k of knownFaces) {
+      const distance = faceapi.euclideanDistance(descriptor, k.descriptor);
+      if (distance < minDistance) {
+        minDistance = distance;
+        bestMatch = k.name;
+      }
+    }
+    f.label = minDistance < 0.6 ? bestMatch : "Unknown";
+  }
+  renderGallery();
+  banner("success", "Selected images identified.");
+});
 
-const MODEL_URL = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights/';
+const MODEL_URL = 'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights';
 
 Promise.all([
   faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
   faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
   faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL)
 ]).then(() => {
-  console.log('Face-api models loaded successfully');
+  console.log('Face-api models loaded');
 }).catch(err => {
   console.error('Error loading face-api models:', err);
-  banner("error", "Failed to load facial recognition models. Identification disabled.");
+  banner("error", "Failed to load facial recognition models.");
 });
 
 /* ===== AUTO REFRESH STATUS ===== */
