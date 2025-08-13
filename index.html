@@ -2,34 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Face Capture Dashboard — Secure</title>
+  <title>Face Capture Dashboard — Secure (simple auth)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Tailwind (CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- JSZip + FileSaver -->
+  <!-- JSZip + FileSaver for ZIP downloads -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha512-L2sRjVb0QbDFZxK1qDLF70qLwVqv+1X0x8h1nA1sS3uKk3v7b7Q6kQ2o9YmdrAgG2w1DtdxW0dYrm3rH8b0QvA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js" integrity="sha512-v3b6H0fQGm7q6yF8P2cK3R9Q8wz3a2bG1z+o8d8b3Dq0yF0ZQf2Dk2QpY1m2kLQ1M5vZ0a3r0OeJQy7M3eE9Ww==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-  <!-- Firebase v9 modular (CDN) -->
-  <script type="module">
-    // This module is intentionally empty in HEAD; actual firebase init happens in body script
-  </script>
-
   <style>
-    /* tiny helpers */
-    .hidden-by-auth { display: none; }
+    /* small adjustments for modal overlay */
+    .overlay { background: rgba(0,0,0,0.45); }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen text-gray-800">
+
   <!-- Header -->
   <header class="bg-blue-600 text-white shadow">
     <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
       <h1 class="text-xl md:text-2xl font-bold">Face Capture Dashboard</h1>
-      <div class="flex items-center gap-4">
-        <div id="status-indicator" class="text-sm md:text-base">Not signed in</div>
-        <div id="userInfo" class="text-sm hidden"></div>
-        <button id="signInBtn" class="py-1 px-3 rounded bg-white text-blue-600 hover:bg-gray-100">Sign in</button>
-        <button id="signOutBtn" class="py-1 px-3 rounded bg-red-500 text-white hover:bg-red-600 hidden">Sign out</button>
+      <div class="flex items-center gap-3">
+        <div id="status-indicator" class="text-sm md:text-base">Loading status…</div>
+        <div id="auth-area" class="text-sm md:text-base"></div>
       </div>
     </div>
   </header>
@@ -41,38 +35,6 @@
     </div>
   </div>
 
-  <!-- Login Modal -->
-  <div id="authModal" class="fixed inset-0 bg-black/40 flex items-center justify-center hidden z-50">
-    <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-      <h3 class="text-lg font-semibold mb-3">Sign in / Register</h3>
-      <div id="authStep1">
-        <label class="block text-sm">Email</label>
-        <input id="authEmail" type="email" class="w-full border rounded px-3 py-2 mb-2" />
-        <label class="block text-sm">Password</label>
-        <input id="authPassword" type="password" class="w-full border rounded px-3 py-2 mb-4" />
-        <div class="flex gap-2">
-          <button id="doSignIn" class="flex-1 py-2 rounded bg-blue-600 text-white">Sign in</button>
-          <button id="doRegister" class="flex-1 py-2 rounded bg-gray-200">Register</button>
-        </div>
-        <p class="text-xs text-gray-500 mt-3">Admins manage users and enable 2FA. Registration creates a normal user.</p>
-      </div>
-
-      <!-- OTP step for 2FA -->
-      <div id="authOtpStep" class="hidden">
-        <p class="text-sm mb-2">Enter the 6-digit code sent to your email</p>
-        <input id="authOtp" type="text" maxlength="6" class="w-full border rounded px-3 py-2 mb-3" />
-        <div class="flex gap-2">
-          <button id="verifyOtpBtn" class="flex-1 py-2 rounded bg-emerald-600 text-white">Verify</button>
-          <button id="cancelOtpBtn" class="flex-1 py-2 rounded bg-gray-200">Cancel</button>
-        </div>
-      </div>
-
-      <div class="mt-4 text-right">
-        <button id="closeAuthModal" class="text-sm text-gray-500">Close</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Main -->
   <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
     <!-- Controls row -->
@@ -81,7 +43,7 @@
       <div class="bg-white rounded-xl shadow p-4 space-y-3">
         <h2 class="font-semibold text-lg">Remote Control</h2>
         <button id="toggleBtn"
-          class="w-full py-2 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50" disabled>
+          class="w-full py-2 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
           Loading…
         </button>
         <p class="text-xs text-gray-500">
@@ -91,7 +53,6 @@
           <div>Last active: <span id="lastActive">—</span></div>
           <div class="text-red-600" id="statusError"></div>
         </div>
-        <div id="adminBadge" class="text-xs text-white bg-indigo-600 inline-block px-2 py-1 rounded hidden">Admin</div>
       </div>
 
       <!-- Latest detection -->
@@ -109,7 +70,7 @@
         </div>
       </div>
 
-      <!-- Bulk actions -->
+      <!-- Bulk actions + Admin card container -->
       <div class="bg-white rounded-xl shadow p-4 space-y-3">
         <h2 class="font-semibold text-lg">Bulk Actions</h2>
         <div class="flex flex-wrap gap-2">
@@ -121,6 +82,26 @@
         <p class="text-xs text-gray-500">
           Tip: You can also click images to toggle selection.
         </p>
+
+        <!-- Admin-only user management -->
+        <div id="adminCard" class="mt-4 hidden border-t pt-4">
+          <h3 class="font-semibold">User Management (Admin)</h3>
+
+          <form id="createUserForm" class="grid grid-cols-1 gap-2 mt-3">
+            <input id="newUsername" class="px-3 py-2 border rounded" placeholder="New username (no spaces)" required />
+            <input id="newPassword" class="px-3 py-2 border rounded" placeholder="Password" type="password" required />
+            <select id="newRole" class="px-3 py-2 border rounded">
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+            </select>
+            <div class="flex gap-2">
+              <button type="submit" class="px-3 py-2 rounded bg-blue-600 text-white">Create user</button>
+              <button type="button" id="refreshUsersBtn" class="px-3 py-2 rounded bg-gray-200">Refresh users</button>
+            </div>
+          </form>
+
+          <div id="usersList" class="mt-3 text-xs"></div>
+        </div>
       </div>
     </section>
 
@@ -134,365 +115,280 @@
         <!-- items injected -->
       </div>
     </section>
-
-    <!-- Admin Panel -->
-    <section id="adminPanel" class="bg-white rounded-xl shadow p-4 hidden">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="font-semibold text-lg">Admin Panel</h2>
-        <div class="text-sm text-gray-500">Only visible to admins</div>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <!-- Invite user -->
-        <div class="p-3 border rounded">
-          <h3 class="font-medium mb-2">Invite / Create User</h3>
-          <input id="newUserEmail" type="email" placeholder="user@example.com" class="w-full border rounded px-2 py-1 mb-2">
-          <select id="newUserRole" class="w-full border rounded px-2 py-1 mb-2">
-            <option value="user">User</option>
-            <option value="admin">Admin</option>
-          </select>
-          <button id="createUserBtn" class="py-2 px-3 rounded bg-blue-600 text-white">Create (secure)</button>
-          <p class="text-xs text-gray-500 mt-2">This will call a secure Cloud Function that creates the user and (optionally) marks them admin. Replace with your function URL in the code.</p>
-        </div>
-
-        <!-- Admin user list & 2FA toggle -->
-        <div class="p-3 border rounded">
-          <h3 class="font-medium mb-2">Manage Users</h3>
-          <div id="userList" class="space-y-2 max-h-48 overflow-auto"></div>
-          <button id="refreshUsersBtn" class="mt-3 py-2 px-3 rounded bg-gray-200">Refresh Users</button>
-        </div>
-      </div>
-    </section>
   </main>
 
-  <!-- Firebase + App Script -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendEmailVerification } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
-    import { getDatabase, ref, get, set, onValue, child, update, remove } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+  <!-- Login modal / landing -->
+  <div id="loginModal" class="fixed inset-0 flex items-center justify-center hidden z-50">
+    <div class="overlay absolute inset-0"></div>
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-md p-6 z-10">
+      <h2 class="text-xl font-semibold mb-3">Sign in</h2>
+      <p class="text-sm text-gray-500 mb-4">Log in to access the Face Capture Dashboard.</p>
+      <form id="loginForm" class="space-y-3">
+        <input id="loginUser" class="w-full px-3 py-2 border rounded" placeholder="Username" required />
+        <input id="loginPass" type="password" class="w-full px-3 py-2 border rounded" placeholder="Password" required />
+        <div class="flex justify-between items-center">
+          <label class="text-sm text-gray-600"><input id="rememberChk" type="checkbox" class="mr-2">Remember me</label>
+          <button type="submit" class="px-4 py-2 rounded bg-blue-600 text-white">Sign in</button>
+        </div>
+      </form>
+      <p class="mt-3 text-xs text-gray-500">If this is the first time you run the dashboard, the embedded script will attempt to create an admin account automatically.</p>
+    </div>
+  </div>
 
-    /************* CONFIG - Replace with your Firebase project's config *************/
-    const firebaseConfig = {
-      apiKey: "<YOUR_API_KEY>",
-      authDomain: "<YOUR_AUTH_DOMAIN>",
-      databaseURL: "<YOUR_RTDB_URL>", // e.g. https://your-project-default-rtdb.firebaseio.com
-      projectId: "<YOUR_PROJECT_ID>",
-      // ... other fields as provided by Firebase console
+  <script>
+    // =========================
+    // CONFIG
+    // =========================
+    const BASE = "https://faceuploader-3347e-default-rtdb.firebaseio.com/";
+    const URL_FACES   = BASE + "faces.json";
+    const URL_FACE    = (key) => BASE + "faces/" + key + ".json";
+    const URL_STATUS  = BASE + "status.json";
+    const URL_CONTROL = BASE + "control/start_recognition.json";
+    const URL_USERS   = BASE + "users.json";
+    const URL_USER    = (uname) => BASE + "users/" + encodeURIComponent(uname) + ".json";
+
+    // Default admin credentials created by this script if users missing.
+    const DEFAULT_ADMIN = {
+      username: "admin",
+      passwordPlain: "Adm1n@FaceDash2025", // <--- credentials I created for you
+      role: "admin"
     };
-    /*********************************************************************************/
 
-    // Cloud Function endpoints (deploy these on your server / Firebase Functions)
-    // Replace these URLs with your deployed function endpoints.
-    const CF_CREATE_USER = "<CLOUD_FUNCTION_URL>/createUser";       // POST {email, password, role}
-    const CF_SET_ADMIN   = "<CLOUD_FUNCTION_URL>/setAdmin";         // POST {uid, isAdmin}
-    const CF_LIST_USERS  = "<CLOUD_FUNCTION_URL>/listUsers";        // GET -> returns user list
-    const CF_SEND_OTP    = "<CLOUD_FUNCTION_URL>/sendOtp";          // POST {uid}
-    const CF_VERIFY_OTP  = "<CLOUD_FUNCTION_URL>/verifyOtp";        // POST {uid, otp}
-
-    // Initialize firebase
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getDatabase(app);
-
-    // UI elements
-    const bannerEl = document.getElementById("banner");
-    const bannerInner = document.getElementById("banner-inner");
+    // ===== UI helpers =====
     function banner(type, msg) {
+      const wrap = document.getElementById("banner");
+      const inner = document.getElementById("banner-inner");
       const cls = {
         error: "bg-red-100 text-red-800 border border-red-200",
         success: "bg-green-50 text-green-800 border border-green-200",
         info: "bg-blue-50 text-blue-800 border border-blue-200",
         warn: "bg-yellow-50 text-yellow-800 border border-yellow-200"
       }[type] || "bg-blue-50 text-blue-800 border border-blue-200";
-      bannerInner.className = "rounded-lg p-3 " + cls;
-      bannerInner.textContent = msg;
-      bannerEl.classList.remove("hidden");
-      setTimeout(() => bannerEl.classList.add("hidden"), 5000);
+      inner.className = "rounded-lg p-3 " + cls;
+      inner.textContent = msg;
+      wrap.classList.remove("hidden");
+      setTimeout(() => wrap.classList.add("hidden"), 6000);
     }
 
-    // Basic app state
-    let currentUser = null;
-    let isAdmin = false;
-
-    // Original Firebase DB endpoints used in your app
-    const BASE = firebaseConfig.databaseURL.endsWith('/') ? firebaseConfig.databaseURL : firebaseConfig.databaseURL + '/';
-    const URL_FACES   = BASE + "faces.json";
-    const URL_FACE    = (key) => BASE + "faces/" + key + ".json";
-    const URL_STATUS  = BASE + "status.json";
-    const URL_CONTROL = BASE + "control/start_recognition.json";
-
-    // Cached status and faces
-    let cachedStatus = { is_recognition_active: false, last_active: null, error: "" };
-    let faces = [];
-
-    // DOM refs used later
-    const statusIndicator = document.getElementById("status-indicator");
-    const signInBtn = document.getElementById("signInBtn");
-    const signOutBtn = document.getElementById("signOutBtn");
-    const userInfo = document.getElementById("userInfo");
-    const adminPanel = document.getElementById("adminPanel");
-    const adminBadge = document.getElementById("adminBadge");
-
-    // Auth modal refs
-    const authModal = document.getElementById("authModal");
-    const authEmail = document.getElementById("authEmail");
-    const authPassword = document.getElementById("authPassword");
-    const doSignIn = document.getElementById("doSignIn");
-    const doRegister = document.getElementById("doRegister");
-    const closeAuthModal = document.getElementById("closeAuthModal");
-    const authOtpStep = document.getElementById("authOtpStep");
-    const authStep1 = document.getElementById("authStep1");
-    const authOtp = document.getElementById("authOtp");
-    const verifyOtpBtn = document.getElementById("verifyOtpBtn");
-    const cancelOtpBtn = document.getElementById("cancelOtpBtn");
-
-    // Admin panel refs
-    const createUserBtn = document.getElementById("createUserBtn");
-    const newUserEmail = document.getElementById("newUserEmail");
-    const newUserRole = document.getElementById("newUserRole");
-    const userListEl = document.getElementById("userList");
-    const refreshUsersBtn = document.getElementById("refreshUsersBtn");
-
-    // Other app refs (gallery etc)
-    const toggleBtn = document.getElementById("toggleBtn");
-    const refreshBtn = document.getElementById("refreshBtn");
-    const lastActive = document.getElementById("lastActive");
-    const statusError = document.getElementById("statusError");
-    const latestCaption = document.getElementById("latestCaption");
-    const latestImg = document.getElementById("latestImg");
-    const gallery = document.getElementById("gallery");
-    const countBadge = document.getElementById("countBadge");
-    const selectAllBtn = document.getElementById("selectAllBtn");
-    const deselectAllBtn = document.getElementById("deselectAllBtn");
-    const downloadSelBtn = document.getElementById("downloadSelBtn");
-    const deleteSelBtn = document.getElementById("deleteSelBtn");
-
-    // UI helpers
-    function showAuthModal() { authModal.classList.remove("hidden"); }
-    function hideAuthModal() { authModal.classList.add("hidden"); authOtpStep.classList.add("hidden"); authStep1.classList.remove("hidden"); }
-
-    // ===== Authentication flows =====
-    signInBtn.addEventListener("click", showAuthModal);
-    closeAuthModal.addEventListener("click", hideAuthModal);
-
-    doRegister.addEventListener("click", async () => {
-      const email = authEmail.value.trim();
-      const pass = authPassword.value;
-      if (!email || !pass) return banner("warn", "Enter both email and password");
-      try {
-        // Creates user client-side (this creates an Auth account)
-        const cred = await createUserWithEmailAndPassword(auth, email, pass);
-        // Send verification email
-        await sendEmailVerification(cred.user);
-        banner("success", "Registered. Verification email sent.");
-        hideAuthModal();
-      } catch (err) {
-        console.error(err);
-        banner("error", "Registration failed: " + (err.message || err.code));
+    // Simple hex converter for ArrayBuffer
+    function bufToHex(buffer){
+      const bytes = new Uint8Array(buffer);
+      const hex = [];
+      for (let b of bytes) {
+        hex.push(b.toString(16).padStart(2,'0'));
       }
-    });
+      return hex.join('');
+    }
 
-    doSignIn.addEventListener("click", async () => {
-      const email = authEmail.value.trim();
-      const pass = authPassword.value;
-      if (!email || !pass) return banner("warn", "Enter both email and password");
-      try {
-        const cred = await signInWithEmailAndPassword(auth, email, pass);
-        // After sign-in, check if 2FA is enabled for user
-        const uid = cred.user.uid;
-        const user2faSnap = await get(ref(db, `userMeta/${uid}`));
-        const meta = user2faSnap.val() || {};
-        if (meta.twoFactorEnabled) {
-          // request server to send OTP
-          banner("info", "2FA enabled: requesting OTP...");
-          // call Cloud Function to send OTP to user email (server chooses transport)
-          await fetch(CF_SEND_OTP, {
-            method: "POST",
-            headers: { "Content-Type":"application/json" },
-            body: JSON.stringify({ uid })
-          });
-          // show OTP step
-          authStep1.classList.add("hidden");
-          authOtpStep.classList.remove("hidden");
-        } else {
-          hideAuthModal();
-        }
-      } catch (err) {
-        console.error(err);
-        banner("error", "Sign in failed: " + (err.message || err.code));
-      }
-    });
+    // SHA-256 hashing for passwords
+    async function hashPassword(password) {
+      const enc = new TextEncoder().encode(password);
+      const digest = await crypto.subtle.digest('SHA-256', enc);
+      return bufToHex(digest);
+    }
 
-    verifyOtpBtn.addEventListener("click", async () => {
-      const otp = authOtp.value.trim();
-      const user = auth.currentUser;
-      if (!user) return banner("error", "No user session");
-      if (!otp) return banner("warn", "Enter the OTP");
+    // =========================
+    // AUTH (client-side)
+    // =========================
+    // currentUser object stored in localStorage: { username, role }
+    function getCurrentUser() {
       try {
-        const res = await fetch(CF_VERIFY_OTP, {
-          method: "POST",
-          headers: { "Content-Type":"application/json" },
-          body: JSON.stringify({ uid: user.uid, otp })
+        return JSON.parse(localStorage.getItem("fc_curUser") || "null");
+      } catch { return null; }
+    }
+    function setCurrentUser(u, remember=false) {
+      if (remember) localStorage.setItem("fc_curUser", JSON.stringify(u));
+      else sessionStorage.setItem("fc_curUser", JSON.stringify(u));
+      updateAuthUI();
+    }
+    function clearCurrentUser() {
+      localStorage.removeItem("fc_curUser");
+      sessionStorage.removeItem("fc_curUser");
+      updateAuthUI();
+    }
+    function updateAuthUI() {
+      const area = document.getElementById("auth-area");
+      const cur = getCurrentUser() || JSON.parse(sessionStorage.getItem("fc_curUser") || "null");
+      if (cur) {
+        area.innerHTML = `<span class="px-3 py-1 rounded bg-white text-sm text-gray-700">Signed as <strong>${escapeHtml(cur.username)}</strong> (${escapeHtml(cur.role)})</span>
+          <button id="logoutBtn" class="ml-2 px-3 py-1 rounded bg-gray-200 text-sm">Logout</button>`;
+        document.getElementById("logoutBtn").addEventListener("click", () => {
+          clearCurrentUser();
+          showLogin(true);
         });
-        const j = await res.json();
-        if (res.ok && j.success) {
-          banner("success", "2FA verification OK");
-          hideAuthModal();
-        } else {
-          banner("error", "OTP invalid");
-        }
-      } catch (err) {
-        console.error(err);
-        banner("error", "OTP verification failed");
-      }
-    });
-
-    cancelOtpBtn.addEventListener("click", async () => {
-      // If user cancelled OTP, sign them out
-      await signOut(auth);
-      authStep1.classList.remove("hidden");
-      authOtpStep.classList.add("hidden");
-      banner("info", "2FA cancelled.");
-    });
-
-    signOutBtn.addEventListener("click", async () => {
-      await signOut(auth);
-      banner("info", "Signed out");
-    });
-
-    // Monitor auth state
-    onAuthStateChanged(auth, async (user) => {
-      currentUser = user;
-      if (user) {
-        signInBtn.classList.add("hidden");
-        signOutBtn.classList.remove("hidden");
-        userInfo.classList.remove("hidden");
-        userInfo.textContent = user.email || user.uid;
-        statusIndicator.textContent = "Signed in";
-        // check admin status from DB path /admins/<uid> === true
-        const adminSnap = await get(ref(db, `admins/${user.uid}`));
-        isAdmin = !!adminSnap.val();
-        adminPanel.classList.toggle("hidden", !isAdmin);
-        adminBadge.classList.toggle("hidden", !isAdmin);
-
-        // enable admin-only controls
-        toggleBtn.disabled = !isAdmin;
       } else {
-        signInBtn.classList.remove("hidden");
-        signOutBtn.classList.add("hidden");
-        userInfo.classList.add("hidden");
-        adminPanel.classList.add("hidden");
-        adminBadge.classList.add("hidden");
-        statusIndicator.textContent = "Not signed in";
-        isAdmin = false;
-        toggleBtn.disabled = true;
+        area.innerHTML = `<button id="openLoginBtn" class="px-3 py-1 rounded bg-white text-sm text-gray-700">Sign in</button>`;
+        document.getElementById("openLoginBtn").addEventListener("click", () => showLogin(true));
       }
-    });
+      // show/hide admin card
+      const adminCard = document.getElementById("adminCard");
+      if (cur && cur.role === "admin") adminCard.classList.remove("hidden");
+      else adminCard.classList.add("hidden");
+    }
 
-    // ===== Admin actions wired to Cloud Functions =====
-    createUserBtn.addEventListener("click", async () => {
-      const email = newUserEmail.value.trim();
-      const role = newUserRole.value;
-      if (!email) return banner("warn", "Enter an email");
-      // call cloud function securely (must validate caller is admin on server)
-      try {
-        const res = await fetch(CF_CREATE_USER, {
-          method: "POST",
-          headers: { "Content-Type":"application/json" },
-          body: JSON.stringify({ email, role })
-        });
-        const j = await res.json();
-        if (res.ok) {
-          banner("success", `User created: ${j.uid || "(invited)"}`);
-          newUserEmail.value = "";
-          await loadUserList();
-        } else {
-          banner("error", j.error || "Create user failed");
-        }
-      } catch (err) {
-        console.error(err);
-        banner("error", "Create user request failed");
-      }
-    });
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"'`]/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#x60;'})[m]);
+    }
 
-    // refresh users (admin)
-    refreshUsersBtn.addEventListener("click", loadUserList);
-
-    async function loadUserList() {
-      userListEl.innerHTML = "Loading…";
-      try {
-        const res = await fetch(CF_LIST_USERS);
-        const j = await res.json();
-        if (!res.ok) throw new Error(j.error || "failed");
-        // j.users should be [{uid,email,role,twoFactorEnabled}, ...]
-        userListEl.innerHTML = "";
-        j.users.forEach(u => {
-          const row = document.createElement("div");
-          row.className = "flex items-center justify-between gap-2 p-2 border rounded";
-          row.innerHTML = `
-            <div class="text-sm truncate">${u.email || u.uid}</div>
-            <div class="flex items-center gap-2">
-              <label class="text-xs flex items-center gap-1"><input type="checkbox" ${u.role==="admin" ? "checked":""} data-uid="${u.uid}" class="adminToggle"> Admin</label>
-              <label class="text-xs flex items-center gap-1"><input type="checkbox" ${u.twoFactorEnabled ? "checked":""} data-uid="${u.uid}" class="twofaToggle"> 2FA</label>
-            </div>
-          `;
-          userListEl.appendChild(row);
-        });
-
-        // hook toggles
-        document.querySelectorAll(".adminToggle").forEach(cb => {
-          cb.addEventListener("change", async (ev) => {
-            const uid = ev.target.dataset.uid;
-            const isAdminSet = ev.target.checked;
-            // call secure cloud function to set admin claim or update admin list
-            try {
-              const r = await fetch(CF_SET_ADMIN, {
-                method: "POST",
-                headers: {"Content-Type":"application/json"},
-                body: JSON.stringify({ uid, isAdmin: isAdminSet })
-              });
-              const j = await r.json();
-              if (r.ok) banner("success", `Admin ${isAdminSet ? "enabled":"disabled"} for ${uid}`);
-              else banner("error", j.error || "Failed to update admin");
-            } catch (err) {
-              console.error(err);
-              banner("error", "Request failed");
-            }
-          });
-        });
-
-        document.querySelectorAll(".twofaToggle").forEach(cb => {
-          cb.addEventListener("change", async (ev) => {
-            const uid = ev.target.dataset.uid;
-            const enable = ev.target.checked;
-            // call CF to enable/disable 2FA
-            try {
-              const r = await fetch(CF_SET_ADMIN.replace("/setAdmin","/set2fa"), { // example endpoint path
-                method: "POST",
-                headers: {"Content-Type":"application/json"},
-                body: JSON.stringify({ uid, enable })
-              });
-              const j = await r.json();
-              if (r.ok) banner("success", `2FA ${enable ? "enabled":"disabled"} for ${uid}`);
-              else banner("error", j.error || "Failed to update 2FA");
-            } catch (err) {
-              console.error(err);
-              banner("error", "Request failed");
-            }
-          });
-        });
-
-      } catch (err) {
-        console.error(err);
-        userListEl.innerHTML = "Failed to load users";
-        banner("error", "Failed to load user list");
+    // Show login modal
+    function showLogin(open=true) {
+      const modal = document.getElementById("loginModal");
+      if (open) {
+        modal.classList.remove("hidden");
+      } else {
+        modal.classList.add("hidden");
       }
     }
 
-    // ===== Faces: load, render, select, download, delete =====
+    // =========================
+    // Firebase user CRUD (simple)
+    // =========================
+    async function fetchJSON(url, opts) {
+      const r = await fetch(url, opts);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    }
+
+    async function ensureAdminExists() {
+      // If no users present or admin missing, create default admin.
+      try {
+        const all = await fetch(URL_USERS, { cache: "no-store" }).then(r => r.json());
+        if (!all || !all[DEFAULT_ADMIN.username]) {
+          // create admin
+          const hashed = await hashPassword(DEFAULT_ADMIN.passwordPlain);
+          const body = JSON.stringify({ password: hashed, role: DEFAULT_ADMIN.role });
+          const r = await fetch(URL_USER(DEFAULT_ADMIN.username), {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body
+          });
+          if (!r.ok) {
+            banner("warn", "Could not create default admin automatically (Firebase rules?). Create 'users/admin' manually or adjust rules.");
+            return;
+          } else {
+            banner("success", `Default admin '${DEFAULT_ADMIN.username}' created.`)
+          }
+        }
+      } catch (err) {
+        console.warn("ensureAdminExists failed:", err);
+        banner("warn", "Could not verify/create default admin (network/rules). You can still sign in if users exist.");
+      }
+    }
+
+    async function getUsersMap() {
+      try {
+        const res = await fetch(URL_USERS, { cache: "no-store" });
+        if (!res.ok) throw new Error("users fetch failed");
+        const data = await res.json();
+        return data || {};
+      } catch (e) {
+        banner("error", "Failed to fetch users.");
+        return {};
+      }
+    }
+
+    async function createUser(username, passwordPlain, role="user") {
+      username = username.trim();
+      if (!username) throw new Error("invalid username");
+      const hashed = await hashPassword(passwordPlain);
+      const body = JSON.stringify({ password: hashed, role });
+      const r = await fetch(URL_USER(username), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body
+      });
+      if (!r.ok) throw new Error("create failed");
+    }
+
+    async function deleteUser(username) {
+      // cannot delete last admin? we leave it to admin responsibility.
+      const r = await fetch(URL_USER(username), { method: "DELETE" });
+      if (!r.ok) throw new Error("delete failed");
+    }
+
+    // =========================
+    // Dashboard: status + faces (original code adapted to require auth)
+    // =========================
+    let cachedStatus = { is_recognition_active: false, last_active: null, error: "" };
+    let faces = []; // [{key, image_base64, timestamp, selected:false}, ...]
+
+    function setStatusUI() {
+      const el = document.getElementById("status-indicator");
+      const last = document.getElementById("lastActive");
+      const err = document.getElementById("statusError");
+
+      if (cachedStatus.error) {
+        err.textContent = cachedStatus.error || "";
+      } else {
+        err.textContent = "";
+      }
+
+      last.textContent = cachedStatus.last_active || "—";
+
+      if (cachedStatus.is_recognition_active) {
+        el.innerHTML = `<span class="bg-green-500/90 px-3 py-1 rounded-full">🟢 Capturing Faces</span>`;
+      } else {
+        el.innerHTML = `<span class="bg-red-500/90 px-3 py-1 rounded-full">🔴 Stopped</span>`;
+      }
+
+      const btn = document.getElementById("toggleBtn");
+      btn.disabled = false;
+      btn.textContent = cachedStatus.is_recognition_active ? "Stop Recognition" : "Start Recognition";
+    }
+
+    async function fetchStatus() {
+      // allow only logged-in users
+      if (!getCurrentUser() && !JSON.parse(sessionStorage.getItem("fc_curUser") || "null")) {
+        // not logged in -> hide status UI
+        document.getElementById("status-indicator").textContent = "Sign in to view status";
+        return;
+      }
+      try {
+        const res = await fetch(URL_STATUS, { cache: "no-store" });
+        const data = await res.json();
+        cachedStatus = data || { is_recognition_active: false, last_active: null, error: "Device offline" };
+      } catch {
+        cachedStatus = { is_recognition_active: false, last_active: cachedStatus.last_active || null, error: "Network error" };
+      }
+      setStatusUI();
+    }
+
+    async function toggleRemote() {
+      const cur = getCurrentUser() || JSON.parse(sessionStorage.getItem("fc_curUser") || "null");
+      if (!cur) { banner("warn", "Sign in to control remote."); showLogin(true); return; }
+
+      const btn = document.getElementById("toggleBtn");
+      btn.disabled = true;
+      btn.textContent = "Working…";
+      const desired = !cachedStatus.is_recognition_active;
+      try {
+        const r = await fetch(URL_CONTROL, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(desired)
+        });
+        if (!r.ok) throw new Error("control write failed");
+        // wait briefly for status to reflect
+        const start = Date.now();
+        let ok = false;
+        while (Date.now() - start < 8000) {
+          await new Promise(r => setTimeout(r, 800));
+          await fetchStatus();
+          if (cachedStatus.is_recognition_active === desired) { ok = true; break; }
+        }
+        if (!ok) banner("warn", desired ? "Could not confirm start. App may be offline/camera busy." : "Could not confirm stop.");
+        else banner("success", desired ? "Capture started." : "Capture stopped.");
+      } catch {
+        banner("error", "Remote control failed (network/rules).");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = cachedStatus.is_recognition_active ? "Stop Recognition" : "Start Recognition";
+      }
+    }
+
     function renderLatest(entry) {
-      const cap = latestCaption;
-      const box = latestImg;
+      const cap = document.getElementById("latestCaption");
+      const box = document.getElementById("latestImg");
       if (!entry) {
         cap.textContent = "No images yet";
         box.innerHTML = "";
@@ -503,15 +399,18 @@
     }
 
     function renderGallery() {
-      gallery.innerHTML = "";
-      countBadge.textContent = faces.length.toString();
+      const g = document.getElementById("gallery");
+      const badge = document.getElementById("countBadge");
+      g.innerHTML = "";
+      badge.textContent = faces.length.toString();
 
       if (!faces.length) {
-        gallery.innerHTML = `<div class="col-span-full text-gray-400 text-center py-6">No faces yet</div>`;
+        g.innerHTML = `<div class="col-span-full text-gray-400 text-center py-6">No faces yet</div>`;
         renderLatest(null);
         return;
       }
 
+      // latest is first (faces sorted desc by timestamp)
       renderLatest(faces[0]);
 
       for (const f of faces) {
@@ -548,7 +447,7 @@
 
         card.appendChild(imgWrap);
         card.appendChild(meta);
-        gallery.appendChild(card);
+        g.appendChild(card);
 
         if (f.selected) {
           card.classList.add("ring-2", "ring-blue-500");
@@ -557,7 +456,13 @@
     }
 
     async function loadFaces() {
-      refreshBtn.disabled = true;
+      // require login
+      if (!getCurrentUser() && !JSON.parse(sessionStorage.getItem("fc_curUser") || "null")) {
+        document.getElementById("gallery").innerHTML = `<div class="col-span-full text-gray-400 text-center py-6">Sign in to view faces</div>`;
+        return;
+      }
+
+      document.getElementById("refreshBtn").disabled = true;
       try {
         const res = await fetch(URL_FACES, { cache: "no-store" });
         const data = await res.json();
@@ -566,15 +471,15 @@
           renderGallery();
           return;
         }
+        // Convert to array with keys and sort newest first by timestamp
         faces = Object.entries(data)
           .map(([key, v]) => ({ key, ...v, selected: false }))
           .sort((a, b) => (new Date(b.timestamp || 0)) - (new Date(a.timestamp || 0)));
         renderGallery();
-      } catch (err) {
+      } catch {
         banner("error", "Failed to load images.");
-        console.error(err);
       } finally {
-        refreshBtn.disabled = false;
+        document.getElementById("refreshBtn").disabled = false;
       }
     }
 
@@ -600,6 +505,7 @@
       const zip = new JSZip();
       selected.forEach((f, idx) => {
         const bytes = b64ToUint8Array(f.image_base64);
+        // Filename: timestamp_key.jpg
         const safeTs = (f.timestamp || `img_${idx}`).replace(/[:\s]/g, "_");
         zip.file(`${safeTs}_${f.key}.jpg`, bytes);
       });
@@ -608,6 +514,9 @@
     }
 
     async function deleteSelected() {
+      const cur = getCurrentUser() || JSON.parse(sessionStorage.getItem("fc_curUser") || "null");
+      if (!cur) { banner("warn", "Sign in to delete images."); showLogin(true); return; }
+
       const selected = faces.filter(f => f.selected);
       if (!selected.length) {
         banner("warn", "No images selected.");
@@ -628,93 +537,163 @@
       await loadFaces();
     }
 
-    // ===== Remote control =====
-    function setStatusUI() {
-      const el = statusIndicator;
-      const last = lastActive;
-      const err = statusError;
-
-      if (cachedStatus.error) {
-        err.textContent = cachedStatus.error || "";
-      } else {
-        err.textContent = "";
-      }
-
-      last.textContent = cachedStatus.last_active || "—";
-
-      if (cachedStatus.is_recognition_active) {
-        el.innerHTML = `<span class="bg-green-500/90 px-3 py-1 rounded-full">🟢 Capturing Faces</span>`;
-      } else {
-        el.innerHTML = `<span class="bg-red-500/90 px-3 py-1 rounded-full">🔴 Stopped</span>`;
-      }
-
-      const btn = toggleBtn;
-      btn.disabled = !isAdmin;
-      btn.textContent = cachedStatus.is_recognition_active ? "Stop Recognition" : "Start Recognition";
-    }
-
-    async function fetchStatus() {
-      try {
-        const res = await fetch(URL_STATUS, { cache: "no-store" });
-        const data = await res.json();
-        cachedStatus = data || { is_recognition_active: false, last_active: null, error: "Device offline" };
-      } catch (err) {
-        cachedStatus = { is_recognition_active: false, last_active: cachedStatus.last_active || null, error: "Network error" };
-      }
-      setStatusUI();
-    }
-
-    async function toggleRemote() {
-      if (!isAdmin) { banner("error", "Admin required"); return; }
-      const btn = toggleBtn;
-      btn.disabled = true;
-      btn.textContent = "Working…";
-      const desired = !cachedStatus.is_recognition_active;
-      try {
-        const r = await fetch(URL_CONTROL, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(desired)
-        });
-        if (!r.ok) throw new Error("control write failed");
-        // wait briefly for status to reflect
-        const start = Date.now();
-        let ok = false;
-        while (Date.now() - start < 8000) {
-          await new Promise(r => setTimeout(r, 800));
-          await fetchStatus();
-          if (cachedStatus.is_recognition_active === desired) { ok = true; break; }
-        }
-        if (!ok) banner("warn", desired ? "Could not confirm start. App may be offline/camera busy." : "Could not confirm stop.");
-        else banner("success", desired ? "Capture started." : "Capture stopped.");
-      } catch (err) {
-        console.error(err);
-        banner("error", "Remote control failed (network/rules).");
-      } finally {
-        btn.disabled = !isAdmin;
-        btn.textContent = cachedStatus.is_recognition_active ? "Stop Recognition" : "Start Recognition";
-      }
-    }
-
-    // ===== events wiring =====
-    toggleBtn.addEventListener("click", toggleRemote);
-    refreshBtn.addEventListener("click", async () => {
+    // =========================
+    // Wiring and initialization
+    // =========================
+    document.getElementById("toggleBtn").addEventListener("click", toggleRemote);
+    document.getElementById("refreshBtn").addEventListener("click", async () => {
       await fetchStatus();
       await loadFaces();
     });
-    selectAllBtn.addEventListener("click", () => selectAll(true));
-    deselectAllBtn.addEventListener("click", () => selectAll(false));
-    downloadSelBtn.addEventListener("click", downloadSelectedZip);
-    deleteSelBtn.addEventListener("click", deleteSelected);
+    document.getElementById("selectAllBtn").addEventListener("click", () => selectAll(true));
+    document.getElementById("deselectAllBtn").addEventListener("click", () => selectAll(false));
+    document.getElementById("downloadSelBtn").addEventListener("click", downloadSelectedZip);
+    document.getElementById("deleteSelBtn").addEventListener("click", deleteSelected);
 
-    // ===== Init =====
+    // Login form handling
+    document.getElementById("loginForm").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const uname = document.getElementById("loginUser").value.trim();
+      const pass = document.getElementById("loginPass").value;
+      const remember = document.getElementById("rememberChk").checked;
+      if (!uname || !pass) { banner("warn", "Enter username & password."); return; }
+
+      try {
+        const res = await fetch(URL_USER(uname), { cache: "no-store" });
+        if (res.status === 200) {
+          const data = await res.json();
+          if (!data) { banner("error", "User not found."); return; }
+          const hashed = await hashPassword(pass);
+          if (hashed === data.password) {
+            // success
+            const userObj = { username: uname, role: data.role || "user" };
+            // save to local or session
+            if (remember) localStorage.setItem("fc_curUser", JSON.stringify(userObj));
+            else sessionStorage.setItem("fc_curUser", JSON.stringify(userObj));
+            document.getElementById("loginForm").reset();
+            showLogin(false);
+            updateAuthUI();
+            banner("success", `Welcome ${uname}`);
+            // after login, refresh data
+            await fetchStatus();
+            await loadFaces();
+            if (userObj.role === "admin") await renderUsersList();
+            return;
+          } else {
+            banner("error", "Invalid password.");
+            return;
+          }
+        } else {
+          banner("error", "User not found (or network error).");
+        }
+      } catch (e) {
+        console.error(e);
+        banner("error", "Login failed (network).");
+      }
+    });
+
+    // Create user form (admin)
+    document.getElementById("createUserForm").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const uname = document.getElementById("newUsername").value.trim();
+      const pass = document.getElementById("newPassword").value;
+      const role = document.getElementById("newRole").value;
+      if (!uname || !pass) { banner("warn", "Enter username & password."); return; }
+
+      try {
+        await createUser(uname, pass, role);
+        banner("success", `Created user ${uname}`);
+        document.getElementById("createUserForm").reset();
+        await renderUsersList();
+      } catch (e) {
+        console.error(e);
+        banner("error", `Failed to create ${uname}.`);
+      }
+    });
+
+    document.getElementById("refreshUsersBtn").addEventListener("click", renderUsersList);
+
+    async function renderUsersList() {
+      const list = document.getElementById("usersList");
+      list.innerHTML = "Loading users…";
+      const map = await getUsersMap();
+      if (!map || Object.keys(map).length === 0) {
+        list.innerHTML = `<div class="text-gray-500">No users found.</div>`;
+        return;
+      }
+      // render table
+      const rows = Object.entries(map).map(([u, v]) => {
+        const role = (v && v.role) ? v.role : "user";
+        return `<div class="flex items-center justify-between py-1 border-b">
+          <div><strong>${escapeHtml(u)}</strong> <span class="text-xs text-gray-500">(${escapeHtml(role)})</span></div>
+          <div class="flex gap-2">
+            <button data-user="${escapeHtml(u)}" class="delUserBtn px-2 py-1 text-xs rounded bg-red-500 text-white">Delete</button>
+          </div>
+        </div>`;
+      }).join("");
+      list.innerHTML = rows;
+
+      // wire delete buttons
+      for (const btn of Array.from(list.querySelectorAll(".delUserBtn"))) {
+        btn.addEventListener("click", async (ev) => {
+          const uname = ev.currentTarget.getAttribute("data-user");
+          if (!uname) return;
+          if (!confirm(`Delete user ${uname}? This cannot be undone.`)) return;
+          // don't allow admin to delete self
+          const cur = getCurrentUser() || JSON.parse(sessionStorage.getItem("fc_curUser") || "null");
+          if (cur && cur.username === uname) { banner("warn", "You cannot delete the signed-in admin."); return; }
+          try {
+            await deleteUser(uname);
+            banner("success", `Deleted ${uname}`);
+            await renderUsersList();
+          } catch (e) {
+            console.error(e);
+            banner("error", `Failed to delete ${uname}.`);
+          }
+        });
+      }
+    }
+
+    // Escape note: trivial
+
+    // Init
     (async function init() {
-      toggleBtn.disabled = true;
+      // disable controls before auth check
+      document.getElementById("toggleBtn").disabled = true;
+
+      // attempt to ensure admin exists (best-effort)
+      await ensureAdminExists();
+
+      // update auth UI (reads stored session/local)
+      updateAuthUI();
+
+      // if no user signed in, show login modal
+      if (!getCurrentUser() && !JSON.parse(sessionStorage.getItem("fc_curUser") || "null")) {
+        showLogin(true);
+      } else {
+        showLogin(false);
+        // if admin, render users list
+        const cur = getCurrentUser() || JSON.parse(sessionStorage.getItem("fc_curUser") || "null");
+        if (cur && cur.role === "admin") {
+          renderUsersList().catch(() => {});
+        }
+      }
+
+      // initial data fetches (they'll check auth)
       await fetchStatus();
       await loadFaces();
-      // light polling
-      setInterval(fetchStatus, 5000);
-      setInterval(loadFaces, 5000);
+
+      // light polling (only if logged in)
+      setInterval(async () => {
+        if (getCurrentUser() || JSON.parse(sessionStorage.getItem("fc_curUser") || "null")) {
+          await fetchStatus();
+        }
+      }, 5000);
+      setInterval(async () => {
+        if (getCurrentUser() || JSON.parse(sessionStorage.getItem("fc_curUser") || "null")) {
+          await loadFaces();
+        }
+      }, 5000);
     })();
 
   </script>
