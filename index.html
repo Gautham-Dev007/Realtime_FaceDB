@@ -143,19 +143,34 @@ async function initializeUsers() {
 }
 
 async function getUserIP() {
+  const API_TOKEN = "YOUR_IPINFO_API_TOKEN"; // Replace with your ipinfo.io API key
+  const URL = `https://ipinfo.io/json?token=${API_TOKEN}`;
+  
+  async function tryFetch(url, retries = 3, delay = 1000) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) throw new Error(`IP fetch failed: ${response.status}`);
+        const data = await response.json();
+        console.log("IP API response:", JSON.stringify(data, null, 2));
+        return {
+          ip: data.ip || "Unknown",
+          location: data.city && data.region && data.country
+            ? `${data.city}, ${data.region}, ${data.country}`
+            : "Unknown"
+        };
+      } catch (error) {
+        console.error(`IP fetch attempt ${i + 1} failed:`, error);
+        if (i < retries - 1) await new Promise(resolve => setTimeout(resolve, delay));
+        else return { ip: "Unknown", location: "Unknown" };
+      }
+    }
+  }
+
   try {
-    const response = await fetch('http://ip-api.com/json/', { cache: "no-store" });
-    if (!response.ok) throw new Error(`IP fetch failed: ${response.status}`);
-    const data = await response.json();
-    console.log("IP API response:", JSON.stringify(data, null, 2));
-    return {
-      ip: data.query || "Unknown",
-      location: data.city && data.regionName && data.country
-        ? `${data.city}, ${data.regionName}, ${data.country}`
-        : "Unknown"
-    };
+    return await tryFetch(URL);
   } catch (error) {
-    console.error('IP fetch error:', error);
+    console.error("IP fetch error:", error);
     banner("warn", "Failed to fetch IP/location. Using fallback values.");
     return { ip: "Unknown", location: "Unknown" };
   }
@@ -522,3 +537,4 @@ loadFaces();
 </script>
 </body>
 </html>
+
