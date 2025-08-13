@@ -50,6 +50,7 @@
     <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
       <!-- Remote control -->
       <div class="bg-white rounded-xl shadow p-4 space-y-3">
+isë
         <h2 class="font-semibold text-lg">Remote Control</h2>
         <button id="toggleBtn"
           class="w-full py-2 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
@@ -113,22 +114,31 @@
 
 <script>
 /* ===== USERS & LOGIN ===== */
+const BASE = "https://faceuploader-3347e-default-rtdb.firebaseio.com/";
+const URL_USERS = BASE + "users.json";
+const URL_USER = (username) => BASE + `users/${username}.json`;
 const defaultUsers = [{ username: "admin", password: "Admin@123", role: "admin", accessHistory: [] }];
-let users = JSON.parse(localStorage.getItem("users")) || defaultUsers;
-users = users.map(u => {
-  if (u.lastAccess && !u.accessHistory) {
-    u.accessHistory = [{ timestamp: u.lastAccess, ip: "Unknown" }];
-    delete u.lastAccess;
-  } else if (!u.accessHistory) {
-    u.accessHistory = [];
-  }
-  return u;
-});
-localStorage.setItem("users", JSON.stringify(users));
 
 const loginScreen = document.getElementById("loginScreen");
 const dashboardScreen = document.getElementById("dashboardScreen");
 const errorMsg = document.getElementById("errorMsg");
+
+async function initializeUsers() {
+  try {
+    const res = await fetch(URL_USERS, { cache: "no-store" });
+    const data = await res.json();
+    if (!data) {
+      // Initialize with default admin if no users exist
+      await fetch(URL_USERS, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ admin: defaultUsers[0] })
+      });
+    }
+  } catch {
+    console.error("Failed to initialize users");
+  }
+}
 
 async function getUserIP() {
   try {
@@ -142,20 +152,35 @@ async function getUserIP() {
   }
 }
 
+async function fetchUsers() {
+  try {
+    const res = await fetch(URL_USERS, { cache: "no-store" });
+    if (!res.ok) throw new Error("Failed to fetch users");
+    const data = await res.json();
+    return data ? Object.values(data) : [];
+  } catch {
+    banner("error", "Failed to load users.");
+    return [];
+  }
+}
+
 async function showDashboard(user) {
   loginScreen.style.display = "none";
   dashboardScreen.style.display = "block";
   window.loggedInUser = user;
 
   // Update access history with timestamp and IP
-  const usersData = JSON.parse(localStorage.getItem("users")) || [];
-  const idx = usersData.findIndex(u => u.username === user.username);
-  if (idx !== -1) { 
-    const timestamp = new Date().toLocaleString();
-    const ip = await getUserIP();
-    if (!usersData[idx].accessHistory) usersData[idx].accessHistory = [];
-    usersData[idx].accessHistory.push({ timestamp, ip });
-    localStorage.setItem("users", JSON.stringify(usersData)); 
+  const timestamp = new Date().toLocaleString();
+  const ip = await getUserIP();
+  const userData = { ...user, accessHistory: [...(user.accessHistory || []), { timestamp, ip }] };
+  try {
+    await fetch(URL_USER(user.username), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(userData)
+    });
+  } catch {
+    banner("error", "Failed to update access history.");
   }
 
   if (user.role === "admin") document.getElementById("userMgmtPanel").style.display = "block";
@@ -165,6 +190,7 @@ async function showDashboard(user) {
 document.getElementById("loginBtn").addEventListener("click", async () => {
   const username = document.getElementById("username").value.trim();
   const password = document.getElementById("password").value;
+  const users = await fetchUsers();
   const user = users.find(u => u.username === username && u.password === password);
   if (user) {
     localStorage.setItem("loggedInUser", JSON.stringify(user));
@@ -176,7 +202,13 @@ document.getElementById("loginBtn").addEventListener("click", async () => {
 
 // Auto-login if already logged in
 const savedUser = JSON.parse(localStorage.getItem("loggedInUser"));
-if(savedUser) showDashboard(savedUser);
+if (savedUser) {
+  fetchUsers().then(users => {
+    const user = users.find(u => u.username === savedUser.username && u.password === savedUser.password);
+    if (user) showDashboard(user);
+    else localStorage.removeItem("loggedInUser");
+  });
+}
 
 document.getElementById("logoutBtn").addEventListener("click", () => {
   localStorage.removeItem("loggedInUser");
@@ -184,9 +216,9 @@ document.getElementById("logoutBtn").addEventListener("click", () => {
 });
 
 // ===== ADMIN USER MANAGEMENT =====
-function renderUserList() {
+async function renderUserList() {
   const userList = document.getElementById("userList");
-  const usersData = JSON.parse(localStorage.getItem("users")) || [];
+  const usersData = await fetchUsers();
   userList.innerHTML = "";
   usersData.forEach((u, index) => {
     const li = document.createElement("li");
@@ -214,11 +246,14 @@ function renderUserList() {
       const delBtn = document.createElement("button");
       delBtn.textContent = "🗑️";
       delBtn.className = "ml-2 text-red-500 hover:text-red-700";
-      delBtn.onclick = () => {
+      delBtn.onclick = async () => {
         if (confirm(`Delete user ${u.username}? This cannot be undone.`)) {
-          usersData.splice(index, 1);
-          localStorage.setItem("users", JSON.stringify(usersData));
-          renderUserList();
+          try {
+            await fetch(URL_USER(u.username), { method: "DELETE" });
+            renderUserList();
+          } catch {
+            banner("error", "Failed to delete user.");
+          }
         }
       };
       li.appendChild(delBtn);
@@ -228,26 +263,32 @@ function renderUserList() {
   });
 }
 
-document.getElementById("addUserBtn").addEventListener("click", () => {
+document.getElementById("addUserBtn").addEventListener("click", async () => {
   const username = document.getElementById("newUser").value.trim();
   const password = document.getElementById("newPass").value.trim();
   if (!username || !password) return alert("Enter username and password");
-  let usersData = JSON.parse(localStorage.getItem("users")) || [];
+  const usersData = await fetchUsers();
   if (usersData.find(u => u.username === username)) return alert("Username exists");
-  usersData.push({ username, password, role: "user", accessHistory: [] });
-  localStorage.setItem("users", JSON.stringify(usersData));
-  document.getElementById("newUser").value = "";
-  document.getElementById("newPass").value = "";
-  renderUserList();
-  alert("User added successfully");
+  const newUser = { username, password, role: "user", accessHistory: [] };
+  try {
+    await fetch(URL_USER(username), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newUser)
+    });
+    document.getElementById("newUser").value = "";
+    document.getElementById("newPass").value = "";
+    renderUserList();
+    alert("User added successfully");
+  } catch {
+    banner("error", "Failed to add user.");
+  }
 });
 
 /* ===== DASHBOARD STATUS & FACE LOGIC ===== */
-// ===== CONFIG =====
-const BASE = "https://faceuploader-3347e-default-rtdb.firebaseio.com/";
-const URL_FACES   = BASE + "faces.json";
-const URL_FACE    = (key) => BASE + "faces/" + key + ".json";
-const URL_STATUS  = BASE + "status.json";
+const URL_FACES = BASE + "faces.json";
+const URL_FACE = (key) => BASE + `faces/${key}.json`;
+const URL_STATUS = BASE + "status.json";
 const URL_CONTROL = BASE + "control/start_recognition.json";
 
 function banner(type, msg) {
@@ -266,7 +307,7 @@ function banner(type, msg) {
 }
 
 let cachedStatus = { is_recognition_active: false, last_active: null, error: "" };
-let faces = []; 
+let faces = [];
 
 function setStatusUI() {
   const el = document.getElementById("status-indicator");
@@ -411,6 +452,7 @@ document.getElementById("deleteSelBtn").addEventListener("click", deleteSelected
 /* ===== AUTO REFRESH STATUS ===== */
 setInterval(fetchStatus, 3000);
 setInterval(loadFaces, 10000);
+initializeUsers();
 fetchStatus();
 loadFaces();
 </script>
