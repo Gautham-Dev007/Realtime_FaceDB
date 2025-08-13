@@ -20,7 +20,7 @@
     <input type="text" id="username" placeholder="Username" class="w-full mb-3 p-2 border rounded">
     <input type="password" id="password" placeholder="Password" class="w-full mb-3 p-2 border rounded">
     <button id="loginBtn" class="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Login</button>
-    <button id="resetAdminBtn" class="w-full mt-2 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm">Reset Admin Account</button>
+    <p class="text-xs text-gray-500 mt-2">Contact administrator to reset admin account if needed.</p>
   </div>
 </div>
 
@@ -117,7 +117,6 @@
 const BASE = "https://faceuploader-3347e-default-rtdb.firebaseio.com/";
 const URL_USERS = BASE + "users.json";
 const URL_USER = (username) => BASE + `users/${username}.json`;
-const defaultUsers = [{ username: "admin", password: "Admin@123", role: "admin", accessHistory: [] }];
 
 const loginScreen = document.getElementById("loginScreen");
 const dashboardScreen = document.getElementById("dashboardScreen");
@@ -129,64 +128,35 @@ async function initializeUsers() {
     if (!res.ok) throw new Error(`Failed to fetch users: ${res.status}`);
     const data = await res.json();
     if (!data || !Object.values(data).some(u => u.username === "admin")) {
-      console.log("No admin user found, initializing with default admin");
-      await fetch(URL_USER("admin"), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(defaultUsers[0])
-      });
-      console.log("Default admin initialized in Firebase");
+      console.log("No admin user found in Firebase");
+      banner("error", "Admin account not found. Please create an admin user in the Firebase Console.");
+      // Admin must be manually created in Firebase Console for security
     }
   } catch (error) {
     console.error("Initialize users error:", error);
-    banner("error", "Failed to connect to database. Using local storage as fallback.");
+    banner("error", "Failed to connect to database. Using local storage as fallback. Admin access requires Firebase setup.");
     let localUsers = JSON.parse(localStorage.getItem("users")) || [];
     if (!localUsers.some(u => u.username === "admin")) {
-      localUsers.push(defaultUsers[0]);
-      localStorage.setItem("users", JSON.stringify(localUsers));
-      console.log("Default admin initialized in localStorage");
+      banner("error", "No admin user in local storage. Please set up admin in Firebase Console.");
     }
-  }
-}
-
-async function resetAdmin() {
-  try {
-    console.log("Resetting admin account");
-    await fetch(URL_USER("admin"), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(defaultUsers[0])
-    });
-    banner("success", "Admin account reset to username: admin, password: Admin@123");
-    // Also reset in localStorage as fallback
-    let localUsers = JSON.parse(localStorage.getItem("users")) || [];
-    localUsers = localUsers.filter(u => u.username !== "admin");
-    localUsers.push(defaultUsers[0]);
-    localStorage.setItem("users", JSON.stringify(localUsers));
-  } catch (error) {
-    console.error("Reset admin error:", error);
-    banner("error", "Failed to reset admin in database. Resetting in local storage.");
-    let localUsers = JSON.parse(localStorage.getItem("users")) || [];
-    localUsers = localUsers.filter(u => u.username !== "admin");
-    localUsers.push(defaultUsers[0]);
-    localStorage.setItem("users", JSON.stringify(localUsers));
   }
 }
 
 async function getUserIP() {
   try {
-    const response = await fetch('https://api.ipapi.co/json/');
+    const response = await fetch('http://ip-api.com/json/', { cache: "no-store" });
     if (!response.ok) throw new Error(`IP fetch failed: ${response.status}`);
     const data = await response.json();
-    console.log("IP API response:", data);
+    console.log("IP API response:", JSON.stringify(data, null, 2));
     return {
-      ip: data.ip || "Unknown",
-      location: data.city && data.region && data.country_name
-        ? `${data.city}, ${data.region}, ${data.country_name}`
+      ip: data.query || "Unknown",
+      location: data.city && data.regionName && data.country
+        ? `${data.city}, ${data.regionName}, ${data.country}`
         : "Unknown"
     };
   } catch (error) {
     console.error('IP fetch error:', error);
+    banner("warn", "Failed to fetch IP/location. Using fallback values.");
     return { ip: "Unknown", location: "Unknown" };
   }
 }
@@ -196,12 +166,13 @@ async function fetchUsers() {
     const res = await fetch(URL_USERS, { cache: "no-store" });
     if (!res.ok) throw new Error(`Failed to fetch users: ${res.status}`);
     const data = await res.json();
-    console.log("Fetched users from Firebase:", data);
+    console.log("Fetched users from Firebase:", JSON.stringify(data, null, 2));
     return data ? Object.values(data) : [];
   } catch (error) {
     console.error("Fetch users error:", error);
     banner("warn", "Failed to load users from database. Using local storage.");
-    const localUsers = JSON.parse(localStorage.getItem("users")) || defaultUsers;
+    const localUsers = JSON.parse(localStorage.getItem("users")) || [];
+    console.log("Fetched users from localStorage:", JSON.stringify(localUsers, null, 2));
     return localUsers;
   }
 }
@@ -214,6 +185,7 @@ async function showDashboard(user) {
   // Update access history with timestamp, IP, and location
   const timestamp = new Date().toLocaleString();
   const { ip, location } = await getUserIP();
+  console.log(`Adding access history for ${user.username}:`, { timestamp, ip, location });
   const userData = { ...user, accessHistory: [...(user.accessHistory || []), { timestamp, ip, location }] };
   try {
     const res = await fetch(URL_USER(user.username), {
@@ -222,7 +194,7 @@ async function showDashboard(user) {
       body: JSON.stringify(userData)
     });
     if (!res.ok) throw new Error(`Failed to update user: ${res.status}`);
-    console.log(`Updated access history for ${user.username}`);
+    console.log(`Updated access history for ${user.username} in Firebase`);
   } catch (error) {
     console.error("Update user error:", error);
     banner("error", "Failed to update access history in database.");
@@ -235,6 +207,7 @@ async function showDashboard(user) {
       localUsers.push(userData);
     }
     localStorage.setItem("users", JSON.stringify(localUsers));
+    console.log(`Updated access history for ${user.username} in localStorage`);
   }
 
   if (user.role === "admin") document.getElementById("userMgmtPanel").style.display = "block";
@@ -245,7 +218,7 @@ document.getElementById("loginBtn").addEventListener("click", async () => {
   const username = document.getElementById("username").value.trim();
   const password = document.getElementById("password").value;
   const users = await fetchUsers();
-  console.log("Users for login check:", users);
+  console.log("Users for login check:", JSON.stringify(users, null, 2));
   const user = users.find(u => u.username === username && u.password === password);
   if (user) {
     localStorage.setItem("loggedInUser", JSON.stringify(user));
@@ -253,12 +226,6 @@ document.getElementById("loginBtn").addEventListener("click", async () => {
   } else {
     errorMsg.textContent = "Invalid username or password";
     console.log(`Login failed for username: ${username}`);
-  }
-});
-
-document.getElementById("resetAdminBtn").addEventListener("click", async () => {
-  if (confirm("Reset admin account to default (username: admin, password: Admin@123)? This will overwrite the existing admin account.")) {
-    await resetAdmin();
   }
 });
 
@@ -303,7 +270,10 @@ async function renderUserList() {
         alert("No access history for this user.");
         return;
       }
-      const historyStr = u.accessHistory.map(h => `Time: ${h.timestamp}, IP: ${h.ip}, Location: ${h.location}`).join('\n');
+      const historyStr = u.accessHistory.map(h => 
+        `Time: ${h.timestamp || 'Unknown'}, IP: ${h.ip || 'Unknown'}, Location: ${h.location || 'Unknown'}`
+      ).join('\n');
+      console.log(`Access history for ${u.username}:`, JSON.stringify(u.accessHistory, null, 2));
       alert(`Access History for ${u.username}:\n\n${historyStr}`);
     };
     li.appendChild(infoBtn);
