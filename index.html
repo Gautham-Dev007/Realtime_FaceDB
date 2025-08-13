@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Uploaded Viewer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+
+<div class="flex flex-col md:flex-row h-screen">
+  
+  <!-- Left panel -->
+  <div class="w-full md:w-1/3 bg-white shadow-lg overflow-y-auto p-4">
+    <h2 class="text-xl font-bold mb-4">Uploaded Images</h2>
+    <div id="list" class="space-y-2">
+      <p class="text-gray-500">Loading...</p>
+    </div>
+  </div>
+
+  <!-- Right panel -->
+  <div class="w-full md:w-2/3 p-6 flex flex-col items-center justify-center">
+    <div id="preview" class="bg-white rounded-lg shadow-lg p-6 w-full max-w-md text-center">
+      <p class="text-gray-500 mb-4">No image selected</p>
+      <div id="preview-img" class="flex justify-center mb-4"></div>
+
+      <div class="space-y-2">
+        <button onclick="viewImage()" class="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded">View Full Image</button>
+        <button onclick="downloadImage()" class="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded">Download</button>
+        <button onclick="deleteImage()" class="w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded">Delete</button>
+        <button onclick="loadData()" class="w-full bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded">Refresh</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const FIREBASE_DB_URL = "https://faceuploader-3347e-default-rtdb.firebaseio.com/faces.json";
+const FIREBASE_DELETE_URL = "https://faceuploader-3347e-default-rtdb.firebaseio.com/faces/"; 
+
+let entries = {};
+let selectedKey = null;
+
+async function loadData() {
+  document.getElementById("list").innerHTML = "<p class='text-gray-500'>Loading...</p>";
+  let res = await fetch(FIREBASE_DB_URL);
+  let data = await res.json();
+  entries = data || {};
+  let listDiv = document.getElementById("list");
+  listDiv.innerHTML = "";
+
+  for (let key in entries) {
+    let div = document.createElement("div");
+    div.className = "p-3 bg-gray-50 rounded-lg shadow hover:bg-blue-100 cursor-pointer";
+    div.textContent = entries[key].timestamp;
+    div.onclick = () => selectImage(key);
+    listDiv.appendChild(div);
+  }
+}
+
+function selectImage(key) {
+  selectedKey = key;
+  let imgData = "data:image/jpeg;base64," + entries[key].image_base64;
+  document.getElementById("preview").querySelector("p").textContent = "";
+  document.getElementById("preview-img").innerHTML = `<img src="${imgData}" class="max-h-64 rounded-lg shadow">`;
+}
+
+function viewImage() {
+  if (!selectedKey) return alert("No image selected");
+  let imgData = "data:image/jpeg;base64," + entries[selectedKey].image_base64;
+  let win = window.open();
+  win.document.write(`<img src="${imgData}" style="max-width:100%">`);
+}
+
+function downloadImage() {
+  if (!selectedKey) return alert("No image selected");
+  let link = document.createElement("a");
+  link.href = "data:image/jpeg;base64," + entries[selectedKey].image_base64;
+  link.download = selectedKey + ".jpg";
+  link.click();
+}
+
+async function deleteImage() {
+  if (!selectedKey) return alert("No image selected");
+  if (!confirm("Are you sure you want to delete this image?")) return;
+  let res = await fetch(FIREBASE_DELETE_URL + selectedKey + ".json", { method: "DELETE" });
+  if (res.ok) {
+    alert("Image deleted");
+    loadData();
+  } else {
+    alert("Failed to delete");
+  }
+}
+
+loadData();
+</script>
+
+</body>
+</html>
