@@ -341,7 +341,9 @@
       await loadFaces();
       // light polling
       setInterval(fetchStatus, 5000);
+      setInterval(loadFaces, 5000);
     })();
   </script>
 </body>
 </html>
+
