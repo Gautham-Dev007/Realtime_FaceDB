@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -321,7 +322,7 @@ async function toggleRemote() {
   } catch {
     banner("error", "Remote control failed (network/rules).");
   } finally {
-   asibility btn.disabled = false;
+    btn.disabled = false;
     btn.textContent = cachedStatus.is_recognition_active ? "Stop Recognition" : "Start Recognition";
   }
 }
@@ -414,3 +415,4 @@ loadFaces();
 </script>
 </body>
 </html>
+```
