@@ -20,6 +20,7 @@
     <input type="text" id="username" placeholder="Username" class="w-full mb-3 p-2 border rounded">
     <input type="password" id="password" placeholder="Password" class="w-full mb-3 p-2 border rounded">
     <button id="loginBtn" class="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Login</button>
+    <button id="resetAdminBtn" class="w-full mt-2 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm">Reset Admin Account</button>
   </div>
 </div>
 
@@ -125,26 +126,57 @@ const errorMsg = document.getElementById("errorMsg");
 async function initializeUsers() {
   try {
     const res = await fetch(URL_USERS, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Failed to fetch users: ${res.status}`);
     const data = await res.json();
-    if (!data) {
-      console.log("No users found, initializing with default admin");
-      await fetch(URL_USERS, {
+    if (!data || !Object.values(data).some(u => u.username === "admin")) {
+      console.log("No admin user found, initializing with default admin");
+      await fetch(URL_USER("admin"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ admin: defaultUsers[0] })
+        body: JSON.stringify(defaultUsers[0])
       });
+      console.log("Default admin initialized in Firebase");
     }
   } catch (error) {
-    console.error("Failed to initialize users:", error);
+    console.error("Initialize users error:", error);
     banner("error", "Failed to connect to database. Using local storage as fallback.");
-    localStorage.setItem("users", JSON.stringify(defaultUsers));
+    let localUsers = JSON.parse(localStorage.getItem("users")) || [];
+    if (!localUsers.some(u => u.username === "admin")) {
+      localUsers.push(defaultUsers[0]);
+      localStorage.setItem("users", JSON.stringify(localUsers));
+      console.log("Default admin initialized in localStorage");
+    }
+  }
+}
+
+async function resetAdmin() {
+  try {
+    console.log("Resetting admin account");
+    await fetch(URL_USER("admin"), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(defaultUsers[0])
+    });
+    banner("success", "Admin account reset to username: admin, password: Admin@123");
+    // Also reset in localStorage as fallback
+    let localUsers = JSON.parse(localStorage.getItem("users")) || [];
+    localUsers = localUsers.filter(u => u.username !== "admin");
+    localUsers.push(defaultUsers[0]);
+    localStorage.setItem("users", JSON.stringify(localUsers));
+  } catch (error) {
+    console.error("Reset admin error:", error);
+    banner("error", "Failed to reset admin in database. Resetting in local storage.");
+    let localUsers = JSON.parse(localStorage.getItem("users")) || [];
+    localUsers = localUsers.filter(u => u.username !== "admin");
+    localUsers.push(defaultUsers[0]);
+    localStorage.setItem("users", JSON.stringify(localUsers));
   }
 }
 
 async function getUserIP() {
   try {
     const response = await fetch('https://api.ipapi.co/json/');
-    if (!response.ok) throw new Error('IP fetch failed');
+    if (!response.ok) throw new Error(`IP fetch failed: ${response.status}`);
     const data = await response.json();
     return data.ip || "Unknown";
   } catch (error) {
@@ -207,12 +239,20 @@ document.getElementById("loginBtn").addEventListener("click", async () => {
   const username = document.getElementById("username").value.trim();
   const password = document.getElementById("password").value;
   const users = await fetchUsers();
+  console.log("Users for login check:", users);
   const user = users.find(u => u.username === username && u.password === password);
   if (user) {
     localStorage.setItem("loggedInUser", JSON.stringify(user));
     await showDashboard(user);
   } else {
     errorMsg.textContent = "Invalid username or password";
+    console.log(`Login failed for username: ${username}`);
+  }
+});
+
+document.getElementById("resetAdminBtn").addEventListener("click", async () => {
+  if (confirm("Reset admin account to default (username: admin, password: Admin@123)? This will overwrite the existing admin account.")) {
+    await resetAdmin();
   }
 });
 
@@ -221,8 +261,10 @@ const savedUser = JSON.parse(localStorage.getItem("loggedInUser"));
 if (savedUser) {
   fetchUsers().then(users => {
     const user = users.find(u => u.username === savedUser.username && u.password === savedUser.password);
-    if (user) showDashboard(user);
-    else {
+    if (user) {
+      console.log("Auto-login successful for:", user.username);
+      showDashboard(user);
+    } else {
       console.log("Auto-login failed: User not found or credentials invalid");
       localStorage.removeItem("loggedInUser");
     }
