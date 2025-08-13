@@ -1,252 +1,162 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <title>Face Capture Dashboard (Free)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://cdn.tailwindcss.com"></script>
+  <meta charset="UTF-8">
+  <title>Face Recognition Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f5f5f5; margin: 0; padding: 0; }
+    header { background: #333; color: #fff; padding: 15px; text-align: center; font-size: 1.5em; }
+    .container { padding: 20px; max-width: 1000px; margin: auto; }
+    .controls, .alerts { margin-bottom: 20px; }
+    button { padding: 10px 15px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; }
+    .start { background: #28a745; color: #fff; }
+    .stop { background: #dc3545; color: #fff; }
+    .refresh { background: #007bff; color: #fff; }
+    .download { background: #17a2b8; color: #fff; }
+    .delete { background: #ffc107; color: #000; }
+    .gallery { display: flex; flex-wrap: wrap; gap: 15px; }
+    .image-card { background: #fff; padding: 10px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); text-align: center; width: 200px; }
+    .image-card img { max-width: 100%; border-radius: 8px; }
+  </style>
 </head>
-<body class="bg-gray-50 min-h-screen text-gray-800">
-  <!-- Header -->
-  <header class="bg-blue-600 text-white shadow">
-    <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-      <h1 class="text-xl md:text-2xl font-bold">Face Capture Dashboard</h1>
-      <div id="status-indicator" class="text-sm md:text-base">Loading status…</div>
-    </div>
-  </header>
+<body>
 
-  <!-- Banner -->
-  <div id="banner" class="hidden">
-    <div class="max-w-5xl mx-auto px-4 py-3">
-      <div id="banner-inner" class="rounded-lg p-3"></div>
-    </div>
+<header>Face Recognition Dashboard</header>
+
+<div class="container">
+
+  <!-- Recognition Controls -->
+  <div class="controls">
+    <h2>Recognition Controls</h2>
+    <button class="start" onclick="setRecognition(true)">Start Recognition</button>
+    <button class="stop" onclick="setRecognition(false)">Stop Recognition</button>
+    <p>Status: <span id="status">Loading...</span></p>
   </div>
 
-  <!-- Main -->
-  <main class="max-w-5xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-    <!-- Controls -->
-    <section class="md:col-span-1 space-y-4">
-      <div class="bg-white rounded-xl shadow p-4">
-        <h2 class="font-semibold text-lg mb-3">Remote Control</h2>
-        <button id="toggleBtn"
-          class="w-full py-2 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
-          Loading…
-        </button>
-        <p class="text-xs text-gray-500 mt-2">
-          Starts/stops the capture app running on your PC via Firebase (free).
-        </p>
-      </div>
+  <!-- Alerts Toggle -->
+  <div class="alerts">
+    <h2>Alerts</h2>
+    <label>
+      <input type="checkbox" id="alertsToggle" onchange="toggleAlerts()"> Enable Alerts
+    </label>
+  </div>
 
-      <div class="bg-white rounded-xl shadow p-4">
-        <h3 class="font-semibold mb-2">Latest Detection</h3>
-        <div id="latestWrap" class="flex flex-col items-center">
-          <p class="text-gray-500" id="latestCaption">Waiting…</p>
-          <div id="latestImg" class="mt-3"></div>
-        </div>
-        <button id="refreshBtn"
-          class="mt-4 w-full py-2 rounded-lg bg-gray-200 hover:bg-gray-300">Refresh</button>
-      </div>
-    </section>
+  <!-- Gallery Controls -->
+  <div class="gallery-controls">
+    <h2>Captured Images</h2>
+    <button class="refresh" onclick="loadImages()">Refresh</button>
+    <button onclick="selectAll()">Select All</button>
+    <button onclick="deselectAll()">Deselect All</button>
+    <button class="download" onclick="downloadSelected()">Download Selected</button>
+    <button class="delete" onclick="deleteSelected()">Delete Selected</button>
+  </div>
 
-    <!-- Recent list -->
-    <section class="md:col-span-2">
-      <div class="bg-white rounded-xl shadow p-4">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="font-semibold text-lg">Recent Faces</h2>
-          <span id="countBadge" class="text-xs bg-gray-100 rounded-full px-2 py-1"></span>
-        </div>
-        <div id="list" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          <!-- thumbnails injected -->
-        </div>
-      </div>
-    </section>
-  </main>
+  <!-- Gallery -->
+  <div class="gallery" id="gallery"></div>
 
-  <script>
-    // === CONFIG (edit if your DB path changes) ===
-    const BASE = "https://faceuploader-3347e-default-rtdb.firebaseio.com/";
-    const URL_FACES   = BASE + "faces.json";
-    const URL_FACE    = (key) => BASE + "faces/" + key + ".json";
-    const URL_STATUS  = BASE + "status.json";
-    const URL_CONTROL = BASE + "control/start_recognition.json";
+</div>
 
-    let cachedStatus = { is_recognition_active: false, last_active: null };
-    let lastSeenKey = null; // for notification on new face
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-    function banner(type, msg) {
-      const wrap = document.getElementById("banner");
-      const inner = document.getElementById("banner-inner");
-      const cls = {
-        error: "bg-red-100 text-red-800 border border-red-200",
-        success: "bg-green-50 text-green-800 border border-green-200",
-        info: "bg-blue-50 text-blue-800 border border-blue-200",
-        warn: "bg-yellow-50 text-yellow-800 border border-yellow-200"
-      }[type] || "bg-blue-50 text-blue-800 border border-blue-200";
-      inner.className = "rounded-lg p-3 " + cls;
-      inner.textContent = msg;
-      wrap.classList.remove("hidden");
-      setTimeout(() => wrap.classList.add("hidden"), 6000);
-    }
+<!-- JSZip for downloads -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
-    function setStatus(active, lastActive, errorMsg) {
-      const el = document.getElementById("status-indicator");
-      if (errorMsg) {
-        el.innerHTML = `<span class="bg-red-500/90 px-3 py-1 rounded-full">⚠️ ${errorMsg}</span>`;
-        return;
-      }
-      if (active) {
-        el.innerHTML = `<span class="bg-green-500/90 px-3 py-1 rounded-full">🟢 Capturing Faces</span>`;
-      } else {
-        el.innerHTML = `<span class="bg-red-500/90 px-3 py-1 rounded-full">🔴 Stopped${lastActive ? " · Last: " + lastActive : ""}</span>`;
-      }
-      document.getElementById("toggleBtn").textContent = active ? "Stop Recognition" : "Start Recognition";
-      document.getElementById("toggleBtn").disabled = false;
-    }
+<script>
+  // TODO: Replace with your Firebase config
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+    projectId: "YOUR_PROJECT",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    messagingSenderId: "YOUR_ID",
+    appId: "YOUR_APP_ID"
+  };
 
-    async function fetchStatus() {
-      try {
-        const res = await fetch(URL_STATUS, { cache: "no-store" });
-        const data = await res.json();
-        if (!data) {
-          cachedStatus = { is_recognition_active: false, last_active: null };
-          setStatus(false, null, "Device offline");
-          return;
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  // Recognition Control
+  function setRecognition(state) {
+    db.ref("recognition_status").set(state ? "active" : "stopped");
+  }
+
+  // Update Status
+  db.ref("recognition_status").on("value", snapshot => {
+    document.getElementById("status").textContent = snapshot.val() || "unknown";
+  });
+
+  // Alerts Toggle
+  function toggleAlerts() {
+    db.ref("alerts_enabled").set(document.getElementById("alertsToggle").checked);
+  }
+  db.ref("alerts_enabled").on("value", snap => {
+    document.getElementById("alertsToggle").checked = !!snap.val();
+  });
+
+  // Load Images
+  function loadImages() {
+    const gallery = document.getElementById("gallery");
+    gallery.innerHTML = "";
+    db.ref("captured_images").once("value", snapshot => {
+      snapshot.forEach(child => {
+        const key = child.key;
+        const base64Data = child.val();
+        const div = document.createElement("div");
+        div.className = "image-card";
+        div.innerHTML = `
+          <input type="checkbox" class="img-select" data-key="${key}">
+          <img src="${base64Data}" alt="Captured Face">
+        `;
+        gallery.appendChild(div);
+      });
+    });
+  }
+
+  // Select/Deselect
+  function selectAll() {
+    document.querySelectorAll(".img-select").forEach(cb => cb.checked = true);
+  }
+  function deselectAll() {
+    document.querySelectorAll(".img-select").forEach(cb => cb.checked = false);
+  }
+
+  // Download Selected
+  function downloadSelected() {
+    const zip = new JSZip();
+    const selected = document.querySelectorAll(".img-select:checked");
+    if (!selected.length) { alert("No images selected."); return; }
+    let count = 0;
+    selected.forEach(cb => {
+      const key = cb.dataset.key;
+      db.ref("captured_images/" + key).once("value", snap => {
+        const imgData = snap.val().split(",")[1]; // remove data:image/png;base64,
+        zip.file(`${key}.png`, imgData, { base64: true });
+        count++;
+        if (count === selected.length) {
+          zip.generateAsync({ type: "blob" }).then(content => saveAs(content, "selected_images.zip"));
         }
-        cachedStatus = data;
-        setStatus(!!data.is_recognition_active, data.last_active || null, data.error || "");
-      } catch {
-        setStatus(false, cachedStatus.last_active || null, "Network error");
-      }
-    }
+      });
+    });
+  }
 
-    async function toggleRemote() {
-      const btn = document.getElementById("toggleBtn");
-      btn.disabled = true;
-      btn.textContent = "Working…";
-      const desired = !cachedStatus.is_recognition_active;
-      try {
-        const put = await fetch(URL_CONTROL, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(desired)
-        });
-        if (!put.ok) throw new Error("control write failed");
-        // wait up to 10s for /status to reflect
-        const start = Date.now();
-        let ok = false;
-        while (Date.now() - start < 10000) {
-          await new Promise(r => setTimeout(r, 1000));
-          await fetchStatus();
-          if (cachedStatus.is_recognition_active === desired) { ok = true; break; }
-        }
-        if (!ok) banner("error", desired
-          ? "Could not start remotely. App may be offline, camera busy, or rules block writes."
-          : "Could not stop remotely.");
-        else banner("success", desired ? "Capture started." : "Capture stopped.");
-      } catch {
-        banner("error", "Remote control failed (network/rules).");
-      } finally {
-        btn.disabled = false;
-        btn.textContent = cachedStatus.is_recognition_active ? "Stop Recognition" : "Start Recognition";
-      }
-    }
+  // Delete Selected
+  function deleteSelected() {
+    const selected = document.querySelectorAll(".img-select:checked");
+    if (!selected.length) { alert("No images selected."); return; }
+    if (!confirm("Are you sure you want to delete selected images?")) return;
+    selected.forEach(cb => {
+      db.ref("captured_images/" + cb.dataset.key).remove();
+    });
+    loadImages();
+  }
 
-    // Latest + list
-    function renderLatest(key, entry) {
-      const cap = document.getElementById("latestCaption");
-      const box = document.getElementById("latestImg");
-      if (!entry) {
-        cap.textContent = "No images yet";
-        box.innerHTML = "";
-        return;
-      }
-      cap.textContent = entry.timestamp || "";
-      box.innerHTML = `<img class="rounded-lg shadow max-h-72" src="data:image/jpeg;base64,${entry.image_base64}" alt="latest" />`;
-    }
+  // Initial load
+  loadImages();
+</script>
 
-    async function loadFaces() {
-      const list = document.getElementById("list");
-      const badge = document.getElementById("countBadge");
-      list.innerHTML = `<div class="col-span-full text-gray-500">Loading…</div>`;
-      try {
-        const res = await fetch(URL_FACES, { cache: "no-store" });
-        const data = await res.json();
-        if (!data) {
-          renderLatest(null, null);
-          list.innerHTML = `<div class="col-span-full text-gray-400">No faces yet</div>`;
-          badge.textContent = "0";
-          return;
-        }
-        // sort newest first
-        const items = Object.entries(data).sort((a,b) =>
-          new Date(b[1].timestamp) - new Date(a[1].timestamp)
-        );
-        badge.textContent = items.length.toString();
-
-        // latest
-        const [latestKey, latestVal] = items[0];
-        renderLatest(latestKey, latestVal);
-
-        // notify on new face (optional, free)
-        if (lastSeenKey && latestKey !== lastSeenKey && "Notification" in window) {
-          if (Notification.permission === "granted") {
-            new Notification("New face detected", { body: latestVal.timestamp || "" });
-          }
-        }
-        lastSeenKey = latestKey;
-
-        // thumbs
-        list.innerHTML = "";
-        for (const [key, entry] of items.slice(0, 24)) { // cap for perf
-          const div = document.createElement("div");
-          div.className = "border rounded-lg p-2 bg-gray-50 hover:bg-blue-50 transition";
-          div.innerHTML = `
-            <img class="rounded mb-2 w-full aspect-square object-cover"
-                 src="data:image/jpeg;base64,${entry.image_base64}" alt="${entry.timestamp || ""}">
-            <div class="text-xs text-gray-600 truncate">${entry.timestamp || ""}</div>
-            <button class="mt-2 w-full text-xs bg-red-600 text-white rounded py-1 hover:bg-red-700"
-                    data-key="${key}">Delete</button>`;
-          list.appendChild(div);
-        }
-
-        // wire delete buttons
-        list.querySelectorAll("button[data-key]").forEach(btn => {
-          btn.onclick = async () => {
-            const key = btn.getAttribute("data-key");
-            if (!confirm("Delete this image?")) return;
-            try {
-              const r = await fetch(URL_FACE(key), { method: "DELETE" });
-              if (!r.ok) throw new Error();
-              banner("success", "Image deleted.");
-              await loadFaces();
-            } catch {
-              banner("error", "Failed to delete.");
-            }
-          };
-        });
-
-      } catch {
-        list.innerHTML = `<div class="col-span-full text-red-600">Failed to load images.</div>`;
-      }
-    }
-
-    // Ask notification permission (optional)
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
-
-    // Events
-    document.getElementById("toggleBtn").addEventListener("click", toggleRemote);
-    document.getElementById("refreshBtn").addEventListener("click", loadFaces);
-
-    // Init
-    (async function init(){
-      document.getElementById("toggleBtn").disabled = true;
-      await fetchStatus();
-      await loadFaces();
-      setInterval(fetchStatus, 5000);
-      setInterval(loadFaces, 8000);
-    })();
-  </script>
 </body>
 </html>
