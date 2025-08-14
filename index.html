@@ -1,90 +1,524 @@
-<!DOCTYPE html>
+sorry here it is<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Face Labels Dashboard</title>
+  <meta charset="utf-8" />
+  <title>Face Capture Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- JSZip + FileSaver -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 </head>
-<body class="bg-gray-100 min-h-screen flex flex-col items-center">
+<body class="bg-gray-50 min-h-screen text-gray-800">
 
-  <h1 class="text-2xl font-bold mt-6 mb-4">📸 Face Images with Labels</h1>
+<!-- LOGIN SCREEN -->
+<div id="loginScreen" class="flex items-center justify-center h-screen">
+  <div class="bg-white p-6 rounded-xl shadow-md w-96">
+    <h1 class="text-2xl font-bold mb-4 text-center">Login</h1>
+    <div id="errorMsg" class="text-red-600 text-sm mb-2"></div>
+    <input type="text" id="username" placeholder="Username" class="w-full mb-3 p-2 border rounded">
+    <input type="password" id="password" placeholder="Password" class="w-full mb-3 p-2 border rounded">
+    <button id="loginBtn" class="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Login</button>
+    <p class="text-xs text-gray-500 mt-2">Contact administrator to reset admin account if needed.</p>
+  </div>
+</div>
 
-  <!-- Container for images -->
-  <div id="imageContainer" class="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 w-full max-w-6xl"></div>
+<!-- DASHBOARD SCREEN -->
+<div id="dashboardScreen" class="hidden">
+  <!-- Header -->
+  <header class="bg-blue-600 text-white shadow">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+      <h1 class="text-xl md:text-2xl font-bold">Face Capture Dashboard</h1>
+      <div>
+        <span id="status-indicator" class="text-sm md:text-base">Loading status…</span>
+        <button id="logoutBtn" class="ml-4 px-3 py-1 bg-red-500 rounded hover:bg-red-600 text-sm">Logout</button>
+      </div>
+    </div>
+  </header>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref as dbRef, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-    import { getStorage, ref as sRef, listAll, getDownloadURL, getMetadata } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-storage.js";
+  <!-- Banner -->
+  <div id="banner" class="hidden">
+    <div class="max-w-6xl mx-auto px-4 py-3">
+      <div id="banner-inner" class="rounded-lg p-3"></div>
+    </div>
+  </div>
 
-    const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-      databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_PROJECT_ID.appspot.com",
-      messagingSenderId: "XXXXXX",
-      appId: "YOUR_APP_ID"
+  <!-- Main -->
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+    <!-- Controls row -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- Remote control -->
+      <div class="bg-white rounded-xl shadow p-4 space-y-3">
+        <h2 class="font-semibold text-lg">Remote Control</h2>
+        <button id="toggleBtn"
+          class="w-full py-2 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+          Loading…
+        </button>
+        <p class="text-xs text-gray-500">Controls the capture app on your PC via Firebase Realtime Database.</p>
+        <div class="text-sm text-gray-700">
+          <div>Last active: <span id="lastActive">—</span></div>
+          <div class="text-red-600" id="statusError"></div>
+        </div>
+      </div>
+
+      <!-- Latest detection -->
+      <div class="bg-white rounded-xl shadow p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold text-lg">Latest Detection</h2>
+          <button id="refreshBtn" class="py-2 px-3 rounded-lg bg-gray-200 hover:bg-gray-300 text-sm">
+            Refresh
+          </button>
+        </div>
+        <div id="latestWrap" class="flex flex-col items-center">
+          <p class="text-gray-500" id="latestCaption">Waiting…</p>
+          <div id="latestImg" class="mt-3"></div>
+        </div>
+      </div>
+
+      <!-- Bulk actions -->
+      <div class="bg-white rounded-xl shadow p-4 space-y-3" id="bulkActions">
+        <h2 class="font-semibold text-lg">Bulk Actions</h2>
+        <div class="flex flex-wrap gap-2">
+          <button id="selectAllBtn" class="py-2 px-3 rounded-lg bg-gray-200 hover:bg-gray-300 text-sm">Select All</button>
+          <button id="deselectAllBtn" class="py-2 px-3 rounded-lg bg-gray-200 hover:bg-gray-300 text-sm">Deselect All</button>
+          <button id="downloadSelBtn" class="py-2 px-3 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm">Download Selected (ZIP)</button>
+          <button id="deleteSelBtn" class="py-2 px-3 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm">Delete Selected</button>
+        </div>
+        <p class="text-xs text-gray-500">Tip: You can also click images to toggle selection.</p>
+      </div>
+    </section>
+
+    <!-- Gallery -->
+    <section class="bg-white rounded-xl shadow p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-lg">Recent Faces</h2>
+        <span id="countBadge" class="text-xs bg-gray-100 rounded-full px-2 py-1"></span>
+      </div>
+      <div id="gallery" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
+    </section>
+
+    <!-- Admin User Management -->
+    <div class="bg-white rounded-xl shadow p-4 space-y-3" id="userMgmtPanel" style="display:none;">
+      <h2 class="font-semibold text-lg">User Management (Admin)</h2>
+      <input type="text" id="newUser" placeholder="New username" class="border p-1 rounded w-1/2">
+      <input type="password" id="newPass" placeholder="Password" class="border p-1 rounded w-1/2">
+      <button id="addUserBtn" class="py-1 px-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">Add User</button>
+      <h3 class="mt-3 font-medium">Existing Users:</h3>
+      <ul id="userList" class="text-sm text-gray-700"></ul>
+    </div>
+
+  </main>
+</div>
+
+<script>
+/* ===== USERS & LOGIN ===== */
+const BASE = "https://faceuploader-3347e-default-rtdb.firebaseio.com/";
+const URL_USERS = BASE + "users.json";
+const URL_USER = (username) => BASE + `users/${username}.json`;
+
+const loginScreen = document.getElementById("loginScreen");
+const dashboardScreen = document.getElementById("dashboardScreen");
+const errorMsg = document.getElementById("errorMsg");
+
+async function initializeUsers() {
+  try {
+    const res = await fetch(URL_USERS, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Failed to fetch users: ${res.status}`);
+    const data = await res.json();
+    if (!data || !Object.values(data).some(u => u.username === "admin")) {
+      console.log("No admin user found in Firebase");
+      banner("error", "Admin account not found. Please create an admin user in the Firebase Console.");
+      // Admin must be manually created in Firebase Console for security
+    }
+  } catch (error) {
+    console.error("Initialize users error:", error);
+    banner("error", "Failed to connect to database. Using local storage as fallback. Admin access requires Firebase setup.");
+    let localUsers = JSON.parse(localStorage.getItem("users")) || [];
+    if (!localUsers.some(u => u.username === "admin")) {
+      banner("error", "No admin user in local storage. Please set up admin in Firebase Console.");
+    }
+  }
+}
+
+async function getUserIP() {
+  try {
+    const response = await fetch('http://ip-api.com/json/', { cache: "no-store" });
+    if (!response.ok) throw new Error(`IP fetch failed: ${response.status}`);
+    const data = await response.json();
+    console.log("IP API response:", JSON.stringify(data, null, 2));
+    return {
+      ip: data.query || "Unknown",
+      location: data.city && data.regionName && data.country
+        ? `${data.city}, ${data.regionName}, ${data.country}`
+        : "Unknown"
     };
+  } catch (error) {
+    console.error('IP fetch error:', error);
+    banner("warn", "Failed to fetch IP/location. Using fallback values.");
+    return { ip: "Unknown", location: "Unknown" };
+  }
+}
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const storage = getStorage(app);
+async function fetchUsers() {
+  try {
+    const res = await fetch(URL_USERS, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Failed to fetch users: ${res.status}`);
+    const data = await res.json();
+    console.log("Fetched users from Firebase:", JSON.stringify(data, null, 2));
+    return data ? Object.values(data) : [];
+  } catch (error) {
+    console.error("Fetch users error:", error);
+    banner("warn", "Failed to load users from database. Using local storage.");
+    const localUsers = JSON.parse(localStorage.getItem("users")) || [];
+    console.log("Fetched users from localStorage:", JSON.stringify(localUsers, null, 2));
+    return localUsers;
+  }
+}
 
-    async function loadImagesWithLabels() {
-      const container = document.getElementById("imageContainer");
-      container.innerHTML = ""; // Clear old content
+async function showDashboard(user) {
+  loginScreen.style.display = "none";
+  dashboardScreen.style.display = "block";
+  window.loggedInUser = user;
 
-      // 1️⃣ Get labels from Firebase Realtime Database
-      const labelsSnap = await get(dbRef(db, "labels"));
-      const labels = labelsSnap.exists() ? labelsSnap.val() : {};
+  // Update access history with timestamp, IP, and location
+  const timestamp = new Date().toLocaleString();
+  const { ip, location } = await getUserIP();
+  console.log(`Adding access history for ${user.username}:`, { timestamp, ip, location });
+  const userData = { ...user, accessHistory: [...(user.accessHistory || []), { timestamp, ip, location }] };
+  try {
+    const res = await fetch(URL_USER(user.username), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(userData)
+    });
+    if (!res.ok) throw new Error(`Failed to update user: ${res.status}`);
+    console.log(`Updated access history for ${user.username} in Firebase`);
+  } catch (error) {
+    console.error("Update user error:", error);
+    banner("error", "Failed to update access history in database.");
+    // Fallback to localStorage
+    let localUsers = JSON.parse(localStorage.getItem("users")) || [];
+    const idx = localUsers.findIndex(u => u.username === user.username);
+    if (idx !== -1) {
+      localUsers[idx] = userData;
+    } else {
+      localUsers.push(userData);
+    }
+    localStorage.setItem("users", JSON.stringify(localUsers));
+    console.log(`Updated access history for ${user.username} in localStorage`);
+  }
 
-      // 2️⃣ List all images in Firebase Storage folder "unlabeled"
-      const storageFolder = sRef(storage, "unlabeled");
-      const files = await listAll(storageFolder);
+  if (user.role === "admin") document.getElementById("userMgmtPanel").style.display = "block";
+  renderUserList();
+}
 
-      // 3️⃣ Fetch metadata for sorting by upload time
-      const filesWithMeta = await Promise.all(
-        files.items.map(async (fileRef) => {
-          const meta = await getMetadata(fileRef);
-          return { fileRef, meta };
-        })
-      );
+document.getElementById("loginBtn").addEventListener("click", async () => {
+  const username = document.getElementById("username").value.trim();
+  const password = document.getElementById("password").value;
+  const users = await fetchUsers();
+  console.log("Users for login check:", JSON.stringify(users, null, 2));
+  const user = users.find(u => u.username === username && u.password === password);
+  if (user) {
+    localStorage.setItem("loggedInUser", JSON.stringify(user));
+    await showDashboard(user);
+  } else {
+    errorMsg.textContent = "Invalid username or password";
+    console.log(`Login failed for username: ${username}`);
+  }
+});
 
-      // Sort by most recent upload first
-      filesWithMeta.sort((a, b) => new Date(b.meta.timeCreated) - new Date(a.meta.timeCreated));
+// Auto-login if already logged in
+const savedUser = JSON.parse(localStorage.getItem("loggedInUser"));
+if (savedUser) {
+  fetchUsers().then(users => {
+    const user = users.find(u => u.username === savedUser.username && u.password === savedUser.password);
+    if (user) {
+      console.log("Auto-login successful for:", user.username);
+      showDashboard(user);
+    } else {
+      console.log("Auto-login failed: User not found or credentials invalid");
+      localStorage.removeItem("loggedInUser");
+    }
+  });
+}
 
-      // 4️⃣ For each file, get download URL and match label
-      for (const { fileRef } of filesWithMeta) {
-        const url = await getDownloadURL(fileRef);
-        const filename = fileRef.name;
-        const label = labels[filename] || "Unknown";
+document.getElementById("logoutBtn").addEventListener("click", () => {
+  localStorage.removeItem("loggedInUser");
+  location.reload();
+});
 
-        // Create card
-        const card = document.createElement("div");
-        card.className = "flex flex-col items-center p-2 bg-white border rounded shadow hover:shadow-lg transition";
+// ===== ADMIN USER MANAGEMENT =====
+async function renderUserList() {
+  const userList = document.getElementById("userList");
+  const usersData = await fetchUsers();
+  userList.innerHTML = "";
+  usersData.forEach((u, index) => {
+    const li = document.createElement("li");
+    li.className = "flex items-center mb-2";
+    const span = document.createElement("span");
+    span.textContent = `${u.username} (${u.role})`;
+    li.appendChild(span);
 
-        // Image
-        const img = document.createElement("img");
-        img.src = url;
-        img.alt = filename;
-        img.className = "w-40 h-40 object-cover rounded";
-
-        // Label
-        const caption = document.createElement("p");
-        caption.textContent = label;
-        caption.className = "mt-2 font-semibold text-gray-800";
-
-        card.appendChild(img);
-        card.appendChild(caption);
-        container.appendChild(card);
+    // Info icon for access history
+    const infoBtn = document.createElement("button");
+    infoBtn.textContent = "ℹ️";
+    infoBtn.className = "ml-2 text-blue-500 hover:text-blue-700";
+    infoBtn.onclick = () => {
+      if (!u.accessHistory || !u.accessHistory.length) {
+        alert("No access history for this user.");
+        return;
       }
+      const historyStr = u.accessHistory.map(h => 
+        `Time: ${h.timestamp || 'Unknown'}, IP: ${h.ip || 'Unknown'}, Location: ${h.location || 'Unknown'}`
+      ).join('\n');
+      console.log(`Access history for ${u.username}:`, JSON.stringify(u.accessHistory, null, 2));
+      alert(`Access History for ${u.username}:\n\n${historyStr}`);
+    };
+    li.appendChild(infoBtn);
+
+    // Delete button (admin only, can't delete self)
+    if (window.loggedInUser.role === "admin" && u.username !== window.loggedInUser.username) {
+      const delBtn = document.createElement("button");
+      delBtn.textContent = "🗑️";
+      delBtn.className = "ml-2 text-red-500 hover:text-red-700";
+      delBtn.onclick = async () => {
+        if (confirm(`Delete user ${u.username}? This cannot be undone.`)) {
+          try {
+            const res = await fetch(URL_USER(u.username), { method: "DELETE" });
+            if (!res.ok) throw new Error(`Failed to delete user: ${res.status}`);
+            renderUserList();
+            banner("success", `User ${u.username} deleted.`);
+          } catch (error) {
+            console.error("Delete user error:", error);
+            banner("error", "Failed to delete user from database.");
+            // Fallback to localStorage
+            let localUsers = JSON.parse(localStorage.getItem("users")) || [];
+            localUsers = localUsers.filter(user => user.username !== u.username);
+            localStorage.setItem("users", JSON.stringify(localUsers));
+            renderUserList();
+          }
+        }
+      };
+      li.appendChild(delBtn);
     }
 
-    // Load immediately and refresh every 10 seconds
-    loadImagesWithLabels();
-    setInterval(loadImagesWithLabels, 10000);
-  </script>
+    userList.appendChild(li);
+  });
+}
+
+document.getElementById("addUserBtn").addEventListener("click", async () => {
+  const username = document.getElementById("newUser").value.trim();
+  const password = document.getElementById("newPass").value.trim();
+  if (!username || !password) return alert("Enter username and password");
+  const usersData = await fetchUsers();
+  if (usersData.find(u => u.username === username)) return alert("Username exists");
+  const newUser = { username, password, role: "user", accessHistory: [] };
+  try {
+    const res = await fetch(URL_USER(username), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newUser)
+    });
+    if (!res.ok) throw new Error(`Failed to add user: ${res.status}`);
+    document.getElementById("newUser").value = "";
+    document.getElementById("newPass").value = "";
+    renderUserList();
+    banner("success", "User added successfully");
+  } catch (error) {
+    console.error("Add user error:", error);
+    banner("error", "Failed to add user to database.");
+    // Fallback to localStorage
+    let localUsers = JSON.parse(localStorage.getItem("users")) || [];
+    localUsers.push(newUser);
+    localStorage.setItem("users", JSON.stringify(localUsers));
+    document.getElementById("newUser").value = "";
+    document.getElementById("newPass").value = "";
+    renderUserList();
+  }
+});
+
+/* ===== DASHBOARD STATUS & FACE LOGIC ===== */
+const URL_FACES = BASE + "faces.json";
+const URL_FACE = (key) => BASE + `faces/${key}.json`;
+const URL_STATUS = BASE + "status.json";
+const URL_CONTROL = BASE + "control/start_recognition.json";
+
+function banner(type, msg) {
+  const wrap = document.getElementById("banner");
+  const inner = document.getElementById("banner-inner");
+  const cls = {
+    error: "bg-red-100 text-red-800 border border-red-200",
+    success: "bg-green-50 text-green-800 border border-green-200",
+    info: "bg-blue-50 text-blue-800 border border-blue-200",
+    warn: "bg-yellow-50 text-yellow-800 border border-yellow-200"
+  }[type] || "bg-blue-50 text-blue-800 border border-blue-200";
+  inner.className = "rounded-lg p-3 " + cls;
+  inner.textContent = msg;
+  wrap.classList.remove("hidden");
+  setTimeout(() => wrap.classList.add("hidden"), 6000);
+}
+
+let cachedStatus = { is_recognition_active: false, last_active: null, error: "" };
+let faces = [];
+
+function setStatusUI() {
+  const el = document.getElementById("status-indicator");
+  const last = document.getElementById("lastActive");
+  const err = document.getElementById("statusError");
+
+  if (cachedStatus.error) { err.textContent = cachedStatus.error || ""; } else { err.textContent = ""; }
+
+  last.textContent = cachedStatus.last_active || "—";
+
+  if (cachedStatus.is_recognition_active) {
+    el.innerHTML = `<span class="bg-green-500/90 px-3 py-1 rounded-full">🟢 Capturing Faces</span>`;
+  } else {
+    el.innerHTML = `<span class="bg-red-500/90 px-3 py-1 rounded-full">🔴 Stopped</span>`;
+  }
+
+  const btn = document.getElementById("toggleBtn");
+  btn.disabled = false;
+  btn.textContent = cachedStatus.is_recognition_active ? "Stop Recognition" : "Start Recognition";
+}
+
+async function fetchStatus() {
+  try {
+    const res = await fetch(URL_STATUS, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Failed to fetch status: ${res.status}`);
+    const data = await res.json();
+    cachedStatus = data || { is_recognition_active: false, last_active: null, error: "Device offline" };
+  } catch (error) {
+    console.error("Fetch status error:", error);
+    cachedStatus = { is_recognition_active: false, last_active: cachedStatus.last_active || null, error: "Network error" };
+  }
+  setStatusUI();
+}
+
+async function toggleRemote() {
+  const btn = document.getElementById("toggleBtn");
+  btn.disabled = true;
+  btn.textContent = "Working…";
+  const desired = !cachedStatus.is_recognition_active;
+  try {
+    const r = await fetch(URL_CONTROL, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(desired)
+    });
+    if (!r.ok) throw new Error(`Control write failed: ${r.status}`);
+    const start = Date.now();
+    let ok = false;
+    while (Date.now() - start < 8000) {
+      await new Promise(r => setTimeout(r, 800));
+      await fetchStatus();
+      if (cachedStatus.is_recognition_active === desired) { ok = true; break; }
+    }
+    if (!ok) banner("warn", desired ? "Could not confirm start. App may be offline/camera busy." : "Could not confirm stop.");
+    else banner("success", desired ? "Capture started." : "Capture stopped.");
+  } catch (error) {
+    console.error("Toggle remote error:", error);
+    banner("error", "Remote control failed (network/rules).");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = cachedStatus.is_recognition_active ? "Stop Recognition" : "Start Recognition";
+  }
+}
+
+/* ===== Faces: load, render, select, download, delete ===== */
+function renderLatest(entry) {
+  const cap = document.getElementById("latestCaption");
+  const box = document.getElementById("latestImg");
+  if (!entry) { cap.textContent = "No images yet"; box.innerHTML = ""; return; }
+  cap.textContent = entry.timestamp || "";
+  box.innerHTML = `<img class="rounded-lg shadow max-h-72" src="data:image/jpeg;base64,${entry.image_base64}" alt="latest" />`;
+}
+
+function renderGallery() {
+  const g = document.getElementById("gallery");
+  const badge = document.getElementById("countBadge");
+  g.innerHTML = "";
+  badge.textContent = faces.length.toString();
+  if (!faces.length) { g.innerHTML = `<div class="col-span-full text-gray-400 text-center py-6">No faces yet</div>`; renderLatest(null); return; }
+  renderLatest(faces[0]);
+  for (const f of faces) {
+    const card = document.createElement("div");
+    card.className = `relative border rounded-lg overflow-hidden bg-white hover:shadow transition`;
+    const imgWrap = document.createElement("div");
+    imgWrap.className = "cursor-pointer";
+    imgWrap.innerHTML = `<img class="w-full aspect-square object-cover" src="data:image/jpeg;base64,${f.image_base64}" alt="${f.timestamp || ""}">`;
+    const meta = document.createElement("div");
+    meta.className = "px-2 py-2 text-xs text-gray-700 flex items-center justify-between";
+    meta.innerHTML = `<span class="truncate">${f.timestamp || ""}</span><input type="checkbox" class="h-4 w-4" ${f.selected ? "checked" : ""}>`;
+    imgWrap.onclick = () => { f.selected = !f.selected; checkbox.checked = f.selected; card.classList.toggle("ring-2", f.selected); card.classList.toggle("ring-blue-500", f.selected); };
+    const checkbox = meta.querySelector("input[type=checkbox]");
+    checkbox.addEventListener("change", () => { f.selected = checkbox.checked; card.classList.toggle("ring-2", f.selected); card.classList.toggle("ring-blue-500", f.selected); });
+    card.appendChild(imgWrap); card.appendChild(meta); g.appendChild(card);
+    if (f.selected) { card.classList.add("ring-2", "ring-blue-500"); }
+  }
+}
+
+async function loadFaces() {
+  document.getElementById("refreshBtn").disabled = true;
+  try {
+    const res = await fetch(URL_FACES, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Failed to fetch faces: ${res.status}`);
+    const data = await res.json();
+    if (!data) { faces = []; renderGallery(); return; }
+    faces = Object.entries(data).map(([key, v]) => ({ key, ...v, selected: false })).sort((a,b)=> (new Date(b.timestamp || 0)) - (new Date(a.timestamp || 0)));
+    renderGallery();
+  } catch (error) {
+    console.error("Load faces error:", error);
+    banner("error", "Failed to load images.");
+  } finally {
+    document.getElementById("refreshBtn").disabled = false;
+  }
+}
+
+function selectAll(val) { faces.forEach(f => f.selected = val); renderGallery(); }
+
+function b64ToUint8Array(b64) { const binary = atob(b64); const len = binary.length; const bytes = new Uint8Array(len); for (let i=0;i<len;i++) bytes[i]=binary.charCodeAt(i); return bytes; }
+
+async function downloadSelectedZip() {
+  const selected = faces.filter(f => f.selected);
+  if (!selected.length) { banner("warn", "No images selected."); return; }
+  const zip = new JSZip();
+  selected.forEach((f, idx)=> { const bytes = b64ToUint8Array(f.image_base64); const safeTs = (f.timestamp || `img_${idx}`).replace(/[:\s]/g,"_"); zip.file(`${safeTs}_${f.key}.jpg`, bytes); });
+  const blob = await zip.generateAsync({ type: "blob" });
+  saveAs(blob, `faces_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.zip`);
+}
+
+async function deleteSelected() {
+  const selected = faces.filter(f => f.selected);
+  if (!selected.length) { banner("warn", "No images selected."); return; }
+  if (!confirm(`Delete ${selected.length} image(s)? This cannot be undone.`)) return;
+  for (const f of selected) {
+    try {
+      const res = await fetch(URL_FACE(f.key), { method: "DELETE" });
+      if (!res.ok) throw new Error(`Failed to delete face: ${res.status}`);
+    } catch (error) {
+      console.error("Delete face error:", error);
+    }
+  }
+  await loadFaces();
+  banner("success", "Selected images deleted.");
+}
+
+/* ===== EVENT LISTENERS ===== */
+document.getElementById("toggleBtn").addEventListener("click", toggleRemote);
+document.getElementById("refreshBtn").addEventListener("click", loadFaces);
+document.getElementById("selectAllBtn").addEventListener("click", () => selectAll(true));
+document.getElementById("deselectAllBtn").addEventListener("click", () => selectAll(false));
+document.getElementById("downloadSelBtn").addEventListener("click", downloadSelectedZip);
+document.getElementById("deleteSelBtn").addEventListener("click", deleteSelected);
+
+/* ===== AUTO REFRESH STATUS ===== */
+setInterval(fetchStatus, 3000);
+setInterval(loadFaces, 10000);
+initializeUsers();
+fetchStatus();
+loadFaces();
+</script>
 </body>
 </html>
